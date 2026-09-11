@@ -34,3 +34,6 @@ dotnet run --project tests/Watchdog.TM.Web.Tests -c Release -m:1
 The installer is written to `artifacts/`. `src/Watchdog.TM.Web` shares core models, storage, transport and license verification with `src/Watchdog.TM`. The WPF desktop source and its documentation are retained for legacy reference; the server installer is the current release. Supplier tool source is separate from the customer runtime. Tests create temporary signing keys in memory.
 
 See [server setup](docs/Server-setup.md) and [release notes](docs/Release-4.2.1.md).
+
+## Customer Help
+Open Main > Help to view or download the bundled PDF. Main > About shows version and installation details. The guide is packaged at src/Watchdog.TM.Web/wwwroot/help/Watchdog-TM-Help.pdf and also included in the release ZIP. Regenerate it on a Python environment with ReportLab using tools/documentation/build_help.py.
