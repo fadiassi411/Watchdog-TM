@@ -1,0 +1,33 @@
+using Watchdog.TM;
+using Microsoft.Extensions.Configuration;
+var path=Path.Combine(Environment.CurrentDirectory,"work","auto-live-test-"+Guid.NewGuid());
+Directory.CreateDirectory(path);
+var c=new Configuration();c.Settings.Simulation=false;
+var controller=new Controller{Protocol=Protocol.TCP,Host="127.0.0.1",TcpPort=65530,Retries=0,TimeoutMs=100};
+var sensor=new Sensor{ControllerId=controller.Id,TemperatureOffset=4196};
+c.Controllers.Add(controller);c.Sensors.Add(sensor);
+new Store(Path.Combine(path,"watchdog.db")).Save(c,"Test","Isolated startup regression");
+IConfiguration config=new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string>{{"Storage:DataDirectory",path}}).Build();
+var state=new ServerState(config);
+void Check(bool ok,string label){if(!ok)throw new Exception(label);Console.WriteLine("PASS "+label);}
+Check(state.Engine.Config.Settings.CommissionedSensors.Contains(sensor.Id),"startup repairs cleared polling eligibility");
+await state.StartAsync(default);
+var edited=state.Clone();edited.Sensors[0].TemperatureOffset=4197;
+await state.Save(edited,"Isolated sensor edit");
+Check(!state.Engine.Config.Settings.Simulation&&state.Engine.Config.Settings.CommissionedSensors.Contains(sensor.Id),"sensor save applies while live");
+edited=state.Clone();edited.Controllers[0].PollSeconds=3;
+await state.Save(edited,"Isolated controller edit");
+Check(!state.Engine.Config.Settings.Simulation&&state.Engine.Config.Settings.CommissionedSensors.Contains(sensor.Id),"controller save applies while live");
+await state.StopAsync(default);
+var restarted=new ServerState(config);
+Check(!restarted.Engine.Config.Settings.Simulation&&restarted.Engine.Config.Settings.CommissionedSensors.Contains(sensor.Id),"server restart retains live polling and edits");
+Check(restarted.Engine.Config.Sensors[0].TemperatureOffset==4197&&restarted.Engine.Config.Controllers[0].PollSeconds==3,"saved mappings survive restart");
+var trendStore=new Store(Path.Combine(path,"trend.db"));var t=new DateTimeOffset(2026,9,1,0,0,0,TimeSpan.Zero);var tid=Guid.NewGuid();
+trendStore.Sample(new(tid,t.AddSeconds(1),2,"VALID"));trendStore.Sample(new(tid,t.AddSeconds(15),8,"VALID"));trendStore.Sample(new(tid,t.AddSeconds(30),999,"OFFLINE"));trendStore.Sample(new(tid,t.AddSeconds(60),4,"VALID"));trendStore.Sample(new(tid,t.AddSeconds(180),null,"OFFLINE"));
+var trend=System.Text.Json.JsonSerializer.SerializeToElement(Trends.Read(trendStore,tid,t,t.AddMinutes(5),60,default));var pts=trend.GetProperty("points");
+Check(pts.GetArrayLength()==3,"trend groups only occupied time intervals");
+Check(pts[0].GetProperty("Average").GetDouble()==5&&pts[0].GetProperty("Minimum").GetDouble()==2&&pts[0].GetProperty("Maximum").GetDouble()==8,"trend preserves extrema and averages only valid readings");
+Check(pts[0].GetProperty("Missing").GetInt64()==1&&pts[2].GetProperty("Average").ValueKind==System.Text.Json.JsonValueKind.Null,"invalid readings and missing intervals remain unavailable");
+Check(pts[1].GetProperty("At").GetDateTimeOffset()==t.AddSeconds(60),"interval boundary assigned to correct time bucket");
+var yearly=System.Text.Json.JsonSerializer.SerializeToElement(Trends.Read(trendStore,tid,t,t.AddDays(365),1,default));Check(yearly.GetProperty("intervalSeconds").GetInt32()>=26280,"year view automatically bounds chart density");
+try{Trends.Read(trendStore,tid,t,t.AddDays(367),60,default);throw new Exception("Invalid range accepted");}catch(ArgumentException){Console.WriteLine("PASS excessive trend period rejected");}

@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup><OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><Version>4.2.1</Version><ApplicationIcon>..\..\Watch Dog.ico</ApplicationIcon><Product>Watchdog TM V4.2.1</Product><AssemblyName>Watchdog TM</AssemblyName></PropertyGroup>
+<ItemGroup><Resource Include="watchdog-logo.png"/><PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13"/><PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.3"/><PackageReference Include="NModbus" Version="3.0.83"/><PackageReference Include="System.IO.Ports" Version="10.0.3"/><PackageReference Include="MailKit" Version="4.17.0"/><PackageReference Include="ClosedXML" Version="0.105.0"/><PackageReference Include="OxyPlot.Wpf" Version="2.2.0"/><ProjectReference Include="..\Watchdog.Verification\Watchdog.Verification.csproj"/></ItemGroup>
+</Project>
+
+
+
+

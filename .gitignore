@@ -1,0 +1,16 @@
+**/bin/
+**/obj/
+/server/
+/app/
+/supplier/
+/artifacts/
+/work/
+*.db
+*.db-*
+*.pem
+*.key
+*.pfx
+*.wdlicense
+.env
+.env.*
+.vs/

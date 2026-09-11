@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ApplicationIcon>..\..\Watch Dog.ico</ApplicationIcon>
+    <AssemblyName>Watchdog License Manager</AssemblyName>
+    <Product>Watchdog License Manager</Product>
+    <Company>MicroBrain by Fadi Assi</Company>
+    <Description>Offline license generator for Watchdog Energy Management.</Description>
+    <Version>4.2.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Watchdog.Licensing\Watchdog.Licensing.csproj" />
+  </ItemGroup>
+</Project>
