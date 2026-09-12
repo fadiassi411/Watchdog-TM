@@ -82,6 +82,7 @@ public sealed class MonitorEngine
         Config = c;
         Store = store;
     }
+    public event Action<Sensor, Reading>? ReadingObserved;
     public void Start()
     {
         foreach (var item in Store.Latest(Config.Settings.Simulation))
@@ -153,6 +154,7 @@ public sealed class MonitorEngine
                     try
                     {
                         Store.Latest(s.Id, read, Config.Settings.Simulation);
+                        ReadingObserved?.Invoke(s, read);
                         if (read.High.HasValue && Store.Observe(s, "HIGH", read.High.Value, read.At, Config.Settings.Simulation))
                             Silenced = false;
                         if (read.Low.HasValue && Store.Observe(s, "LOW", read.Low.Value, read.At, Config.Settings.Simulation))

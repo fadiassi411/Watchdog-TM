@@ -6,7 +6,11 @@ The ZIP contains the same Windows x64 installer distributed separately, plus the
 
 Validation: regression checks cover core behavior, Modbus TCP loopback reads, automatic live-mode persistence, trend grouping, extrema, invalid readings, bounded chart density, and period validation. Browser and authenticated API checks cover Trend controls and recording-interval saves. Real hardware verification is specific to each installation.
 
-Limitations: Excel exports cover up to 31 days per file. The chart supports periods up to one year at a time. Software alarm emails are not enabled. No public internet hosting is configured.
+Limitations: Excel exports cover up to 31 days per file. The chart supports periods up to one year at a time. Automatic alarm emails are available and disabled by default until SMTP and sensor recipients are configured. No public internet hosting is configured.
 
 ## Documentation update
-Added the bundled nine-page PDF customer Help guide, a Help centre with open/download actions and chapter links, and an About page with version, publisher, platform, operating mode and installation license information.
+Added the bundled PDF customer Help guide, a Help centre with open/download actions and chapter links, and an About page with version, publisher, platform, operating mode and installation license information.
+
+## SMTP update
+Added SMTP settings, encrypted password storage, explicit save/test, per-sensor high/low/recovery/reminder notification rules and persistent delivery history. Automatic sends are off by default and suppressed in demonstration mode. Help now contains ten pages including SMTP instructions.
+

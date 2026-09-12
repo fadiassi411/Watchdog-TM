@@ -6,6 +6,8 @@ public sealed class ServerState : IHostedService
     public string DirectoryPath { get; }
     public Store Store { get; }
     public MonitorEngine Engine { get; }
+    public AlarmNotifications Notifications { get; }
+    public string MailFault { get; set; } = "";
     public SemaphoreSlim Gate { get; } = new(1,1);
     public string Revision { get; private set; } = Guid.NewGuid().ToString();
     public ServerState(IConfiguration config)
@@ -22,6 +24,8 @@ public sealed class ServerState : IHostedService
         if(!previousIds.SequenceEqual(c.Settings.CommissionedSensors))
             Store.Save(c,"System","Automatically resumed configured live readings");
         Engine=new MonitorEngine(c,Store);
+        Notifications=new AlarmNotifications(Store);
+        Engine.ReadingObserved+=(sensor,reading)=>{try{Notifications.Observe(Engine.Config,sensor,reading);}catch{MailFault="Email alarm observation could not be saved. Check server storage.";}};
     }
     public Configuration Clone() => JsonSerializer.Deserialize<Configuration>(JsonSerializer.Serialize(Engine.Config))!;
     public async Task Save(Configuration c,string action)
@@ -30,8 +34,11 @@ public sealed class ServerState : IHostedService
         foreach(var controller in c.Controllers) if(!Enum.IsDefined(controller.Protocol)||!Enum.IsDefined(controller.Parity)||!Enum.IsDefined(controller.StopBits)) throw new Exception("Choose valid controller connection options.");
         foreach(var sensor in c.Sensors) if(!Enum.IsDefined(sensor.TemperatureFunction)||!Enum.IsDefined(sensor.Format)||!Enum.IsDefined(sensor.Order)) throw new Exception("Choose valid temperature format options.");
         LiveMonitoring.Apply(c);
+        Notifications.Ensure();
+
         Store.Save(c,"Administrator",action);
         await Engine.Replace(c);
+        if(c.Settings.Simulation||!c.Settings.MailEnabled||!c.Settings.AutomaticAlerts) Notifications.Reset();
         Revision=Guid.NewGuid().ToString();
     }
     public Task StartAsync(CancellationToken ct) { Engine.Start(); return Task.CompletedTask; }

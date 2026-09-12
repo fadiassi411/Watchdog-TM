@@ -26,6 +26,7 @@ builder.Host.UseWindowsService(o=>o.ServiceName="Watchdog Temperature Monitoring
 if(string.IsNullOrEmpty(builder.Configuration["urls"])) builder.WebHost.UseUrls("http://0.0.0.0:5081");
 builder.Services.AddSingleton<ServerState>();
 builder.Services.AddHostedService(sp=>sp.GetRequiredService<ServerState>());
+builder.Services.AddHostedService<NotificationWorker>();
 var data=builder.Configuration["Storage:DataDirectory"]??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"Watchdog TM");
 builder.Logging.AddProvider(new DailyFileLoggerProvider(Path.Combine(data,"Logs")));
 var protection=builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(data,"Keys"))).SetApplicationName("WatchdogTM.Web");
@@ -62,6 +63,7 @@ app.MapPost("/api/setup",async(HttpContext ctx,IAntiforgery csrf,ServerState s,L
 }).RequireRateLimiting("login");
 var api=app.MapGroup("/api").RequireAuthorization();
 api.AddEndpointFilter(async(context,next)=>{var ctx=context.HttpContext;if(ctx.Request.Method!="GET")await ctx.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(ctx);return await next(context);});
+api.MapSmtp();
 api.MapPost("/logout",async(HttpContext ctx)=>{await ctx.SignOutAsync();return Results.Ok();});
 api.MapGet("/state",async (ServerState s)=>{ await s.Gate.WaitAsync(); try { return Results.Ok(new{
     revision=s.Revision,simulation=s.Engine.Config.Settings.Simulation,site=s.Engine.Config.Settings.Site,

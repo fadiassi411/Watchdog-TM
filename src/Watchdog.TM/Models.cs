@@ -94,6 +94,7 @@ public sealed class Sensor
         get; set;
     }
     public string Recipients { get; set; } = "";
+    public bool EmailHigh { get; set; } = true; public bool EmailLow { get; set; } = true;
     public bool Reminders
     {
         get; set;
@@ -109,6 +110,12 @@ public sealed class Settings
 {
     public bool Simulation { get; set; } = true; public string Site { get; set; } = "Medical refrigerator monitoring";
     public bool AudibleAlarm { get; set; } = true; public bool DailyBackup { get; set; } = false; public string BackupFolder { get; set; } = ""; public int RetentionDays { get; set; } = 30;
+    public bool MailEnabled { get; set; } = false;
+    public bool AutomaticAlerts { get; set; } = false;
+    public string MailSecurity { get; set; } = "StartTls";
+    [Browsable(false)] public string MailPassword { get; set; } = "";
+    public string TestRecipient { get; set; } = "";
+    public string StandardMessage { get; set; } = "Please check the temperature monitoring notification below.";
     public string SmtpHost { get; set; } = ""; public int SmtpPort { get; set; } = 587; public bool SslOnConnect { get; set; } = false;
     public string SmtpUsername { get; set; } = ""; [Browsable(false)] public string ProtectedPassword { get; set; } = "";
     public string SenderEmail { get; set; } = ""; public string SenderName { get; set; } = "Watchdog TM";

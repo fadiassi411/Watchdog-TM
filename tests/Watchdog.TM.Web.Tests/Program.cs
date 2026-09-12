@@ -31,3 +31,4 @@ Check(pts[0].GetProperty("Missing").GetInt64()==1&&pts[2].GetProperty("Average")
 Check(pts[1].GetProperty("At").GetDateTimeOffset()==t.AddSeconds(60),"interval boundary assigned to correct time bucket");
 var yearly=System.Text.Json.JsonSerializer.SerializeToElement(Trends.Read(trendStore,tid,t,t.AddDays(365),1,default));Check(yearly.GetProperty("intervalSeconds").GetInt32()>=26280,"year view automatically bounds chart density");
 try{Trends.Read(trendStore,tid,t,t.AddDays(367),60,default);throw new Exception("Invalid range accepted");}catch(ArgumentException){Console.WriteLine("PASS excessive trend period rejected");}
+await SmtpTests.Run();

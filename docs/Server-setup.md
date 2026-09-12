@@ -24,7 +24,7 @@ Connect the USB/RS485 adapter to the server computer, not to the browsing device
 
 If in demonstration mode, select Settings > Monitoring and license > Switch to live monitoring once. The existing signed TM license remains valid on this PC. Saved controller and sensor changes apply automatically while live mode is enabled. Polling continues when the browser closes or Windows is locked/signed out. Keep the computer powered, awake and the adapter connected. Sleep or shutdown interrupts collection.
 
-The historical recording interval is separate from the controller polling interval. Trends support periods up to one year; Excel downloads support up to 31 days per export. Software high/low temperature alarms are evaluated internally; automatic alarm email delivery remains off. Legacy historical database records and SMTP configuration are retained, but old PLC-alarm control fields are not exposed in the web UI.
+The historical recording interval is separate from the controller polling interval. Trends support periods up to one year; Excel downloads support up to 31 days per export. Software high/low temperature alarms are evaluated internally; SMTP email delivery is configurable under Settings > Email and SMTP; it is disabled by default. Legacy historical database records and SMTP configuration are retained, but old PLC-alarm control fields are not exposed in the web UI.
 
 ## Operations
 
@@ -47,3 +47,5 @@ Each reading card has a Trend button that opens its recorded history, and High A
 Once live monitoring is enabled, controller and sensor edits apply automatically. The Windows service resumes configured live readings after a restart. Disabled or retired sensors remain stopped; demonstration mode is an explicit option.
 
 Trends: choose a quick period or custom range up to one year. Chart interval selects the averaging period with min-max range and gaps. Very dense ranges automatically increase the chart interval. Recording interval changes future saved history from 1 second to 24 hours, without changing PLC polling. Excel exports original readings for ranges up to 31 days. The sample table is removed; stored history is retained.
+
+Email and SMTP: configure STARTTLS, SSL/TLS on connect, or an unauthenticated trusted relay. Passwords are protected with Windows machine encryption and never returned to the browser. Both global switches and per-sensor rules must be enabled for automatic high/low alarm mail. Reminders and recovery are optional. Test mail is an explicit action to the configured test recipient; automatic mail is suppressed in simulation. The persistent queue retries up to five attempts.

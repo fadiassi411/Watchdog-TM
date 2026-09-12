@@ -18,7 +18,7 @@ Keep the server powered and awake. Closing the browser does not stop monitoring.
 - SQLite history retained without automatic sample deletion; Excel export up to 31 days per export.
 - Local password authentication, backup/restore, and signed product-specific capacity licensing.
 
-Software alarm emails are not enabled in this web release. Backup restore intentionally returns to demonstration mode. The server is intended for a trusted local network; no public internet endpoint is configured. Physical commissioning remains specific to the customer's controller, wiring and register map.
+SMTP software alarm notifications are available and disabled by default. Backup restore intentionally returns to demonstration mode. The server is intended for a trusted local network; no public internet endpoint is configured. Physical commissioning remains specific to the customer's controller, wiring and register map.
 
 ## Build and test
 
