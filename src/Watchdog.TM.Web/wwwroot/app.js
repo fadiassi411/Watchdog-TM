@@ -4,7 +4,7 @@ const $=id=>document.getElementById(id), esc=v=>String(v??'').replace(/[&<>"']/g
 const date=v=>!v||v.startsWith('0001')?'Never':new Date(v).toLocaleString();
 function error(e){$('message').textContent=e.message||String(e);$('message').hidden=false;}
 function clear(){ $('message').hidden=true; }
-async function api(path,body,method){const res=await fetch('/api/'+path,{method:method||(body===undefined?'GET':'POST'),headers:{'Content-Type':'application/json','X-CSRF-TOKEN':csrf},body:body===undefined?undefined:JSON.stringify(body)});if(!res.ok){let msg;try{msg=(await res.json()).error;}catch{}if(res.status===401){$('workspace').hidden=true;$('login').hidden=false;$('navigation').hidden=true;}throw new Error(msg||`Request failed (${res.status}).`);}return res.status===204||res.headers.get('content-length')==='0'?null:await res.text().then(t=>t?JSON.parse(t):null);}
+async function api(path,body,method,retried=false){const res=await fetch('/api/'+path,{signal:AbortSignal.timeout(30000),method:method||(body===undefined?'GET':'POST'),headers:{'Content-Type':'application/json','X-CSRF-TOKEN':csrf},body:body===undefined?undefined:JSON.stringify(body)});if(!res.ok){let msg;try{msg=(await res.json()).error;}catch{}if(res.status===400&&msg==='Session validation failed. Reload this page.'&&!retried){const current=await api('session');csrf=current.csrf;return api(path,body,method,true);}if(res.status===401){$('workspace').hidden=true;$('login').hidden=false;$('navigation').hidden=true;}throw new Error(msg||`Request failed (${res.status}).`);}return res.status===204||res.headers.get('content-length')==='0'?null:await res.text().then(t=>t?JSON.parse(t):null);}
 async function session(){const s=await api('session');csrf=s.csrf;setup=s.setup;$('login').hidden=s.authenticated;$('workspace').hidden=!s.authenticated;$('navigation').hidden=!s.authenticated;if(setup){$('loginNote').textContent='Create the administrator password on the server PC (at least 10 characters).';$('loginForm').querySelector('button').textContent='Create administrator';}if(s.authenticated)await refresh();}
 $('loginForm').onsubmit=async e=>{e.preventDefault();clear();try{if(setup)await api('setup',{password:$('password').value});await api('login',{password:$('password').value});$('password').value='';await session();}catch(e){error(e);}};
 $('logout').onclick=async()=>{await api('logout',{});await session();};
@@ -38,7 +38,26 @@ function about(){
 
 $('content').onclick=async e=>{const b=e.target.closest('button');if(!b)return;clear();try{if(b.dataset.alarm)openAlarms(b.dataset.alarm,b.dataset.focus);else if(b.dataset.editController)edit('controller',state.controllers.find(c=>c.id===b.dataset.editController));else if(b.dataset.action==='addController')edit('controller',{id:'00000000-0000-0000-0000-000000000000',name:'New controller',enabled:true,protocol:2,unitId:1,comPort:'COM1',baudRate:9600,parity:2,dataBits:8,stopBits:1,host:'',tcpPort:502,pollSeconds:5,timeoutMs:1500,retries:2});else if(b.dataset.editSensor)edit('sensor',state.sensors.find(s=>s.id===b.dataset.editSensor));else if(b.dataset.addSensor)edit('sensor',{id:'00000000-0000-0000-0000-000000000000',controllerId:b.dataset.addSensor,name:'New sensor',location:'',enabled:true,retired:false,temperatureOffset:null,temperatureFunction:3,format:0,order:0,multiplier:1,offset:0,decimals:1,sampleSeconds:60});else if(b.dataset.test){b.disabled=true;const r=await api('test/'+b.dataset.test,{});error(`Communication successful. Register ${r.address}: ${r.value}. Read at ${date(r.at)}.`);}else if(b.dataset.mode){if(confirm(b.dataset.mode==='false'?'Start continuous read-only monitoring? Local software limits are used; nothing is written to the PLC.':'Stop live polling and switch to demonstration?')){await api('mode',{simulation:b.dataset.mode==='true'});await refresh();}}else if(b.dataset.action==='license'){const f=$('licenseFile').files[0];if(!f)throw Error('Choose a license file.');await api('license',{json:await f.text()});await refresh();}else if(b.dataset.action==='restore'){const f=$('restoreFile').files[0];if(!f)throw Error('Choose a database backup.');if(confirm('Replace current configuration and history with this backup?')){const r=await fetch('/api/restore',{method:'POST',headers:{'X-CSRF-TOKEN':csrf,'Content-Type':'application/octet-stream'},body:f});if(!r.ok)throw Error((await r.json()).error||'Restore failed');await refresh();}}else if(b.dataset.action==='history')await loadHistory();else if(b.dataset.action==='export'){const query=range();if(new Date(to.value)-new Date(from.value)>31*86400000)throw Error('Excel export supports up to 31 days. Choose a shorter export period.');location.href='/api/export/'+query;}}catch(e){error(e);}finally{b.disabled=false;}};
 window.addEventListener('hashchange',()=>{clear();$('content').innerHTML='';render();document.querySelectorAll('nav details').forEach(d=>d.open=false);});
-setInterval(async()=>{ $('clock').textContent=new Date().toLocaleString();if(!state||$('workspace').hidden||$('editor').open||$('alarmEditor').open)return;const page=location.hash.slice(1).split('?')[0]||'dashboard';if(page==='dashboard'||page==='controllers')try{await refresh();}catch(e){error(e);}},5000);
+let polling=false,lastSessionCheck=0;
+async function resumePolling(force=false){
+ if(polling||document.hidden)return;
+ polling=true;
+ try{
+  $('clock').textContent=new Date().toLocaleString();
+  if(force||Date.now()-lastSessionCheck>60000){
+   const current=await api('session');csrf=current.csrf;lastSessionCheck=Date.now();
+   if(!current.authenticated){$('workspace').hidden=true;$('login').hidden=false;$('navigation').hidden=true;return;}
+   $('workspace').hidden=false;$('login').hidden=true;$('navigation').hidden=false;
+  }
+  if(!state||$('workspace').hidden||$('editor').open||$('alarmEditor').open)return;
+  const page=location.hash.slice(1).split('?')[0]||'dashboard';
+  if(page==='dashboard'||page==='controllers')await refresh();
+ }catch(e){error(e);}finally{polling=false;}
+}
+setInterval(()=>resumePolling(),5000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)resumePolling(true);});
+window.addEventListener('focus',()=>resumePolling(true));
+window.addEventListener('online',()=>resumePolling(true));
 session().catch(error);
 
 

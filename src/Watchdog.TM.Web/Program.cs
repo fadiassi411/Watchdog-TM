@@ -33,7 +33,7 @@ var protection=builder.Services.AddDataProtection().PersistKeysToFileSystem(new 
 if(OperatingSystem.IsWindows()) protection.ProtectKeysWithDpapi(true);
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme).AddCookie(o=>{
     o.Cookie.Name="WatchdogTM.Session"; o.Cookie.HttpOnly=true;o.Cookie.SameSite=SameSiteMode.Strict;
-    o.Cookie.SecurePolicy=CookieSecurePolicy.SameAsRequest;o.ExpireTimeSpan=TimeSpan.FromMinutes(30);o.SlidingExpiration=true;
+    o.Cookie.SecurePolicy=CookieSecurePolicy.SameAsRequest;o.ExpireTimeSpan=TimeSpan.FromDays(30);o.SlidingExpiration=true;
     o.Events.OnRedirectToLogin=c=>{c.Response.StatusCode=401;return Task.CompletedTask;};
     o.Events.OnValidatePrincipal=c=>{var server=c.HttpContext.RequestServices.GetRequiredService<ServerState>();if(c.Principal?.FindFirstValue("stamp")!=Stamp(server.Engine.Config.Settings.PasswordHash))c.RejectPrincipal();return Task.CompletedTask;};
 });
@@ -54,7 +54,7 @@ app.MapGet("/api/session",(HttpContext ctx,IAntiforgery csrf,ServerState s)=>Res
 app.MapPost("/api/login",async(HttpContext ctx,IAntiforgery csrf,ServerState s,Login input)=>{
     await csrf.ValidateRequestAsync(ctx);
     if(input.Password.Length>256||!Security.Verify(input.Password,s.Engine.Config.Settings.PasswordHash))return Results.Json(new{error="Incorrect administrator password."},statusCode:401);
-    await ctx.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity(new[]{new Claim(ClaimTypes.Name,"Administrator"),new Claim("stamp",Stamp(s.Engine.Config.Settings.PasswordHash))},CookieAuthenticationDefaults.AuthenticationScheme)));
+    await ctx.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity(new[]{new Claim(ClaimTypes.Name,"Administrator"),new Claim("stamp",Stamp(s.Engine.Config.Settings.PasswordHash))},CookieAuthenticationDefaults.AuthenticationScheme)),new AuthenticationProperties{IsPersistent=true,AllowRefresh=true});
     return Results.Ok();
 }).RequireRateLimiting("login");
 app.MapPost("/api/setup",async(HttpContext ctx,IAntiforgery csrf,ServerState s,Login input)=>{

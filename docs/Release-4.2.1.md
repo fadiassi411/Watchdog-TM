@@ -14,3 +14,7 @@ Added the bundled PDF customer Help guide, a Help centre with open/download acti
 ## SMTP update
 Added SMTP settings, encrypted password storage, explicit save/test, per-sensor high/low/recovery/reminder notification rules and persistent delivery history. Automatic sends are off by default and suppressed in demonstration mode. Help now contains ten pages including SMTP instructions.
 
+
+## Screen lock and session recovery
+Administrator sessions now persist for 30 days with sliding renewal. The browser reconnects on unlock, focus and network recovery, refreshes session tokens, and preserves open settings forms. Sign out and back in once after upgrading to replace an older 30-minute session. Windows sleep still pauses hardware monitoring; keep the server awake.
+Validation: six browser recovery checks and a successful Release build. Physical Windows lock/unlock remains a field check.
