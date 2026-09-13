@@ -27,6 +27,8 @@ if(string.IsNullOrEmpty(builder.Configuration["urls"])) builder.WebHost.UseUrls(
 builder.Services.AddSingleton<ServerState>();
 builder.Services.AddHostedService(sp=>sp.GetRequiredService<ServerState>());
 builder.Services.AddHostedService<NotificationWorker>();
+builder.Services.AddSingleton<PlcHistoryWorker>();
+builder.Services.AddHostedService(sp=>sp.GetRequiredService<PlcHistoryWorker>());
 var data=builder.Configuration["Storage:DataDirectory"]??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"Watchdog TM");
 builder.Logging.AddProvider(new DailyFileLoggerProvider(Path.Combine(data,"Logs")));
 var protection=builder.Services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(data,"Keys"))).SetApplicationName("WatchdogTM.Web");
@@ -64,6 +66,7 @@ app.MapPost("/api/setup",async(HttpContext ctx,IAntiforgery csrf,ServerState s,L
 var api=app.MapGroup("/api").RequireAuthorization();
 api.AddEndpointFilter(async(context,next)=>{var ctx=context.HttpContext;if(ctx.Request.Method!="GET")await ctx.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(ctx);return await next(context);});
 api.MapSmtp();
+api.MapPlcHistory();
 api.MapPost("/logout",async(HttpContext ctx)=>{await ctx.SignOutAsync();return Results.Ok();});
 api.MapGet("/state",async (ServerState s)=>{ await s.Gate.WaitAsync(); try { return Results.Ok(new{
     revision=s.Revision,simulation=s.Engine.Config.Settings.Simulation,site=s.Engine.Config.Settings.Site,
@@ -106,7 +109,7 @@ api.MapPost("/recording/{id:guid}",async(Guid id,RecordingInterval input,ServerS
     await s.Gate.WaitAsync();try{
         if(input.Revision!=s.Revision)return Results.Conflict(new{error="Settings changed. Reload this page and retry."});
         var c=s.Clone();var sensor=c.Sensors.FirstOrDefault(x=>x.Id==id);if(sensor==null)return Results.NotFound();
-        sensor.SampleSeconds=input.Seconds;await s.Save(c,"Trend recording interval updated; live monitoring continues");return Results.Ok();
+        if(c.Controllers.Any(controller=>controller.Id==sensor.ControllerId&&controller.History.Enabled&&controller.History.Channels.Any(channel=>channel.SensorId==sensor.Id)))return Results.BadRequest(new{error="This sensor uses PLC history at 600 seconds. Configure sampling in the verified PLC program."});sensor.SampleSeconds=input.Seconds;await s.Save(c,"Trend recording interval updated; live monitoring continues");return Results.Ok();
     }finally{s.Gate.Release();}
 });
 api.MapGet("/history/{id:guid}",(Guid id,DateTimeOffset from,DateTimeOffset to,ServerState s)=>{if(to<from||to-from>TimeSpan.FromDays(31))return Results.BadRequest(new{error="Select a range of up to 31 days."});return Results.Ok(s.Store.Samples(id,from,to));});

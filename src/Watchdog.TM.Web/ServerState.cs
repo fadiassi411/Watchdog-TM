@@ -30,11 +30,13 @@ public sealed class ServerState : IHostedService
     public Configuration Clone() => JsonSerializer.Deserialize<Configuration>(JsonSerializer.Serialize(Engine.Config))!;
     public async Task Save(Configuration c,string action)
     {
+        foreach(var controller in c.Controllers) PlcHistory.Validate(controller,c);
         Rules.Validate(c); Security.Capacity(c,Engine.Config);
         foreach(var controller in c.Controllers) if(!Enum.IsDefined(controller.Protocol)||!Enum.IsDefined(controller.Parity)||!Enum.IsDefined(controller.StopBits)) throw new Exception("Choose valid controller connection options.");
         foreach(var sensor in c.Sensors) if(!Enum.IsDefined(sensor.TemperatureFunction)||!Enum.IsDefined(sensor.Format)||!Enum.IsDefined(sensor.Order)) throw new Exception("Choose valid temperature format options.");
         LiveMonitoring.Apply(c);
         Notifications.Ensure();
+        Store.Write(Store.EnsureHistory);
 
         Store.Save(c,"Administrator",action);
         await Engine.Replace(c);

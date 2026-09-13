@@ -14,7 +14,12 @@ public sealed class Store
         Path = path;
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path)!);
         using var db = Open();
+        EnsureHistory(db);
         Run(db, "PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS latest(sensor TEXT PRIMARY KEY, mode INTEGER, json TEXT); CREATE TABLE IF NOT EXISTS config(id INTEGER PRIMARY KEY, json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS samples(sensor TEXT NOT NULL, at TEXT NOT NULL, value REAL, quality TEXT NOT NULL, PRIMARY KEY(sensor,at)); CREATE INDEX IF NOT EXISTS ix_samples ON samples(sensor,at); CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, at TEXT,user TEXT,action TEXT); CREATE TABLE IF NOT EXISTS alarms(id INTEGER PRIMARY KEY,sensor TEXT,kind TEXT,opened TEXT,ack TEXT,closed TEXT,last_seen TEXT); CREATE UNIQUE INDEX IF NOT EXISTS ix_episode ON alarms(sensor,kind) WHERE closed IS NULL; CREATE TABLE IF NOT EXISTS email(id INTEGER PRIMARY KEY,episode INTEGER,sensor TEXT,kind TEXT,slot TEXT,status TEXT,attempts INTEGER DEFAULT 0,next TEXT,error TEXT DEFAULT '',UNIQUE(episode,kind,slot));");
+    }
+    public static void EnsureHistory(SqliteConnection db)
+    {
+        Run(db,"CREATE TABLE IF NOT EXISTS plc_snapshots(controller TEXT,sequence INTEGER,at TEXT,hash TEXT,status INTEGER,interval INTEGER,PRIMARY KEY(controller,sequence)); CREATE TABLE IF NOT EXISTS plc_history_values(controller TEXT,sequence INTEGER,sensor TEXT,at TEXT,value REAL,quality TEXT,PRIMARY KEY(controller,sequence,sensor)); CREATE INDEX IF NOT EXISTS ix_plc_history_at ON plc_history_values(sensor,at); CREATE TABLE IF NOT EXISTS plc_gaps(controller TEXT,first_sequence INTEGER,last_sequence INTEGER,detected TEXT,PRIMARY KEY(controller,first_sequence,last_sequence));");
     }
     public SqliteConnection Open()
     {
@@ -85,7 +90,7 @@ public sealed class Store
     {
         using var d = Open();
         using var q = d.CreateCommand();
-        q.CommandText = "SELECT at,value,quality FROM samples WHERE sensor=$id AND at >= $from AND at <= $to ORDER BY at";
+        q.CommandText = "SELECT at,value,quality FROM samples WHERE sensor=$id AND at >= $from AND at <= $to UNION ALL SELECT at,value,quality FROM plc_history_values WHERE sensor=$id AND at >= $from AND at <= $to ORDER BY at";
         q.Parameters.AddWithValue("$id", id.ToString());
         q.Parameters.AddWithValue("$from", Utc(from));
         q.Parameters.AddWithValue("$to", Utc(to));

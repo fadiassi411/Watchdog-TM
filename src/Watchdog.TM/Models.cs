@@ -24,6 +24,7 @@ public enum ByteOrder
 }
 public sealed class Controller
 {
+    public PlcHistoryLayout History { get; set; } = new();
     [Browsable(false)] public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "New controller";
     public bool Enabled { get; set; } = true;
@@ -207,3 +208,43 @@ public static class Rules
     }
 }
 
+
+// Addresses are deliberately unset until verified against the delivered PLC project.
+public sealed class PlcHistoryLayout
+{
+ public bool Enabled {get;set;}
+ public string Verification {get;set;}="";
+ public int Capacity {get;set;}=300;
+ public int SyncSeconds {get;set;}=600;
+ public int RecordWords {get;set;}
+ public ushort? HeaderAddress {get;set;}
+ public int HeaderWords {get;set;}
+ public int SequenceOffset {get;set;}=-1;
+ public int CountOffset {get;set;}=-1;
+ public int PositionOffset {get;set;}=-1;
+ public int StatusOffset {get;set;}=-1;
+ public ushort? BufferAddress {get;set;}
+ public List<PlcHistorySegment> Segments {get;set;}=[];
+ public int RecordSequenceOffset {get;set;}=-1;
+ public int RecordStatusOffset {get;set;}=-1;
+ public int IntervalOffset {get;set;}=-1;
+ public int[] TimestampOffsets {get;set;}=[]; // year, month, day, hour, minute, second
+ public int YearBase {get;set;}=2000;
+ public int UtcOffsetMinutes {get;set;}
+ public bool LowWordFirst {get;set;}=true;
+ public int HealthyStatus {get;set;}=0;
+ public List<PlcHistoryChannel> Channels {get;set;}=[];
+}
+public sealed class PlcHistoryChannel
+{
+ public Guid SensorId {get;set;}
+ public int Offset {get;set;}=-1;
+ public double Multiplier {get;set;}=0.1;
+}
+
+public sealed class PlcHistorySegment
+{
+ public int FirstRecord {get;set;}
+ public int RecordCount {get;set;}
+ public ushort Address {get;set;}
+}

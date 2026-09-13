@@ -200,6 +200,7 @@ public sealed class MonitorEngine
         {
             foreach (var s in Config.Sensors.Where(x => !x.Retired))
             {
+                if (!Config.Settings.Simulation && Config.Controllers.Any(c=>c.Id==s.ControllerId && c.History.Enabled && c.History.Channels.Any(ch=>ch.SensorId==s.Id))) continue;
                 var now = DateTimeOffset.UtcNow;
                 DateTimeOffset due; try { due = nextSample.GetOrAdd(s.Id, _ => { var last = Store.LastSample(s.Id); return last?.AddSeconds(s.SampleSeconds) ?? now; }); } catch { OperationalFault = "RECORDING FAULT — cannot read sampling schedule. Retrying."; continue; }
                 if (now < due)

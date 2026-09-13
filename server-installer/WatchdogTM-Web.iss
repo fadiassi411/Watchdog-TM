@@ -1,13 +1,13 @@
 [Setup]
 AppId={{AA929CEE-03B8-41B4-B697-34D502BD1EC9}
 AppName=Watchdog TM Server
-AppVersion=4.2.1
+AppVersion=4.2.2
 AppPublisher=MicroBrain
 DefaultDirName={autopf}\Watchdog TM Server
 DefaultGroupName=Watchdog TM
 PrivilegesRequired=admin
 OutputDir=..\artifacts
-OutputBaseFilename=Watchdog-TM-Server-4.2.1-Setup
+OutputBaseFilename=Watchdog-TM-Server-4.2.2-Setup
 Compression=lzma2
 SolidCompression=yes
 ArchitecturesAllowed=x64compatible
