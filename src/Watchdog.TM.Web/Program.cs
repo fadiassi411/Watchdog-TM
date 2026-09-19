@@ -67,6 +67,7 @@ var api=app.MapGroup("/api").RequireAuthorization();
 api.AddEndpointFilter(async(context,next)=>{var ctx=context.HttpContext;if(ctx.Request.Method!="GET")await ctx.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(ctx);return await next(context);});
 api.MapSmtp();
 api.MapPlcHistory();
+api.MapDeletion();
 api.MapPost("/logout",async(HttpContext ctx)=>{await ctx.SignOutAsync();return Results.Ok();});
 api.MapGet("/state",async (ServerState s)=>{ await s.Gate.WaitAsync(); try { return Results.Ok(new{
     revision=s.Revision,simulation=s.Engine.Config.Settings.Simulation,site=s.Engine.Config.Settings.Site,

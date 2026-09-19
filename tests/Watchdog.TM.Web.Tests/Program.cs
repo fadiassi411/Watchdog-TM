@@ -33,3 +33,4 @@ var yearly=System.Text.Json.JsonSerializer.SerializeToElement(Trends.Read(trendS
 try{Trends.Read(trendStore,tid,t,t.AddDays(367),60,default);throw new Exception("Invalid range accepted");}catch(ArgumentException){Console.WriteLine("PASS excessive trend period rejected");}
 await SmtpTests.Run();
 await PlcHistoryTests.Run();
+await DeletionTests.Run();

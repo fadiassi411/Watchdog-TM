@@ -38,9 +38,9 @@ public static class PlcHistoryEndpoints
   using var db=s.Store.Open();using var q=db.CreateCommand();
   q.CommandText="SELECT controller,sensor,at,value,quality,sequence,'PLC' FROM plc_history_values WHERE ($0 IS NULL OR controller=$0) AND ($1 IS NULL OR sensor=$1) AND ($2 IS NULL OR at >= $2) AND ($3 IS NULL OR at <= $3) UNION ALL SELECT NULL,sensor,at,value,quality,NULL,'Watchdog' FROM samples WHERE ($1 IS NULL OR sensor=$1) AND ($2 IS NULL OR at >= $2) AND ($3 IS NULL OR at <= $3) ORDER BY at,sensor,sequence";
   q.Parameters.AddWithValue("$0",(object?)controller?.ToString()??DBNull.Value);q.Parameters.AddWithValue("$1",(object?)sensor?.ToString()??DBNull.Value);q.Parameters.AddWithValue("$2",from.HasValue?Store.Utc(from.Value):DBNull.Value);q.Parameters.AddWithValue("$3",to.HasValue?Store.Utc(to.Value):DBNull.Value);
-  var config=s.Engine.Config;using var r=q.ExecuteReader();while(r.Read()){
-   var sid=Guid.Parse(r.GetString(1));var sn=config.Sensors.FirstOrDefault(x=>x.Id==sid);var cid=r.IsDBNull(0)?sn?.ControllerId??Guid.Empty:Guid.Parse(r.GetString(0));if(controller.HasValue&&cid!=controller)continue;
-   yield return new(cid,config.Controllers.FirstOrDefault(x=>x.Id==cid)?.Name??cid.ToString(),sid,sn?.Name??sid.ToString(),r.GetString(2),r.IsDBNull(3)?null:r.GetDouble(3),r.GetString(4),r.IsDBNull(5)?null:r.GetInt64(5),r.GetString(6));
+  var config=s.Engine.Config;var archived=DeletionEndpoints.Archived(s.Store);using var r=q.ExecuteReader();while(r.Read()){
+   var sid=Guid.Parse(r.GetString(1));var sn=config.Sensors.FirstOrDefault(x=>x.Id==sid);var old=archived.GetValueOrDefault(sid);var cid=r.IsDBNull(0)?sn?.ControllerId??old.Controller:Guid.Parse(r.GetString(0));if(controller.HasValue&&cid!=controller)continue;
+   yield return new(cid,config.Controllers.FirstOrDefault(x=>x.Id==cid)?.Name??old.Plc??cid.ToString(),sid,sn?.Name??old.Name??sid.ToString(),r.GetString(2),r.IsDBNull(3)?null:r.GetDouble(3),r.GetString(4),r.IsDBNull(5)?null:r.GetInt64(5),r.GetString(6));
   }
  }
  static object[] Gaps(Store store){using var db=store.Open();using var q=db.CreateCommand();q.CommandText="SELECT controller,first_sequence,last_sequence,detected FROM plc_gaps ORDER BY detected DESC LIMIT 100";using var r=q.ExecuteReader();var rows=new List<object>();while(r.Read())rows.Add(new{controller=r.GetString(0),first=r.GetInt64(1),last=r.GetInt64(2),detected=r.GetString(3)});return rows.ToArray();}

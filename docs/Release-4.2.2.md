@@ -1,4 +1,16 @@
-# V4.2.2 — Independent PLC-backed temperature history
+# V4.2.2 — Controller/register deletion and independent PLC history
+
+## September 19 update: Delete controllers and registers
+
+Controllers and sensors now includes **Delete controller** and **Delete register** buttons with explicit confirmation. Controller deletion removes its attached sensor entries; individual register deletion leaves other sensors configured. Changes apply immediately without a separate Start Live Monitoring step.
+
+Every deletion creates a database backup, checks the browser configuration revision, removes obsolete commissioned IDs/history-channel mappings, and cancels pending sensor notifications. Saved readings remain available in **PLC history and combined trends** and CSV/Excel exports with their original sensor/controller names. Select All PLCs / All sensors to include deleted entries. No PLC writes or PLC-buffer erasure occur.
+
+Authenticated, antiforgery-protected endpoints and stale-revision checks are covered by isolated packaged-server tests. The web regression suite passes 82 checks, including 12 new deletion checks; JavaScript tests verify confirmation cancellation, correct delete targets and session resume. See Delete-entries.md for backup/restore behavior.
+
+The rebuilt installer and ZIP replace the assets on the existing V4.2.2 release. The laptop installation is not automatically updated.
+
+## Existing PLC history features
 
 Adds separate history synchronization per PLC, with configurable verified layouts, stable controller/sensor identities, a 300-snapshot buffer and 600-second PLC sampling. Synthetic test coverage uses 2, 3 and 13 sensors with independent 13-, 14- and 24-word records. No field station or buffer addresses are assumed.
 
