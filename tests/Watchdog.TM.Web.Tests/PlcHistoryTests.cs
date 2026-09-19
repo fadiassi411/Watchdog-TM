@@ -8,7 +8,7 @@ public static class PlcHistoryTests
   var config=new Configuration();config.Controllers.Clear();config.Sensors.Clear();
   foreach(var n in new[]{2,3,13}){
    var c=new Controller{Name="Synthetic "+n,Protocol=Protocol.TCP};config.Controllers.Add(c);
-   c.History=new(){Enabled=true,Verification="SYNTHETIC TEST ONLY",HeaderAddress=0,HeaderWords=5,SequenceOffset=0,CountOffset=2,PositionOffset=3,StatusOffset=4,BufferAddress=100,RecordWords=n+11,RecordSequenceOffset=0,RecordStatusOffset=8,IntervalOffset=9,TimestampOffsets=[2,3,4,5,6,7]};
+   c.History=new(){Capacity=300,Enabled=true,Verification="SYNTHETIC TEST ONLY",HeaderAddress=0,HeaderWords=5,SequenceOffset=0,CountOffset=2,PositionOffset=3,StatusOffset=4,BufferAddress=100,RecordWords=n+11,RecordSequenceOffset=0,RecordStatusOffset=8,IntervalOffset=9,TimestampOffsets=[2,3,4,5,6,7]};
    for(int i=0;i<n;i++){var s=new Sensor{ControllerId=c.Id};config.Sensors.Add(s);c.History.Channels.Add(new(){SensorId=s.Id,Offset=11+i});}
    PlcHistory.Validate(c,config);
   }

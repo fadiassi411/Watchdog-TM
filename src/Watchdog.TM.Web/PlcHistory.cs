@@ -12,13 +12,14 @@ public static class PlcHistory
   void Need(bool ok,string message){if(!ok)throw new ArgumentException(message);}
   Need(c.Protocol!=Protocol.Simulation,"History requires a real PLC.");
   Need(!string.IsNullOrWhiteSpace(h.Verification),"Enter the verified PLC project/layout reference.");
-  Need(h.Capacity==300&&h.SyncSeconds>=10&&h.SyncSeconds<=86400,"Use 300 records and synchronization from 10 to 86400 seconds.");
+  Need(h.Capacity is 144 or 300,"Use 144 snapshots (24 hours) or the existing 300-snapshot layout (50 hours).");
+  Need(h.SyncSeconds>=10&&h.SyncSeconds<=86400,"Use synchronization from 10 to 86400 seconds.");
   Need(h.HeaderAddress.HasValue&&(h.BufferAddress.HasValue||h.Segments.Count>0),"Verified header and buffer addresses are required.");
   Need(h.HeaderWords>=5&&h.HeaderWords<=125&&h.RecordWords>=12&&h.RecordWords<=125,"Invalid header or record length.");
   Need(h.HeaderAddress+h.HeaderWords<=65536,"Header exceeds Modbus address range.");
   var segments=h.Segments.Count>0?h.Segments.OrderBy(x=>x.FirstRecord).ToList():new List<PlcHistorySegment>{new(){FirstRecord=0,RecordCount=h.Capacity,Address=h.BufferAddress!.Value}};
-  int covered=0;foreach(var segment in segments){Need(segment.FirstRecord==covered&&segment.RecordCount>0&&segment.RecordCount<=300,"Segments must cover all records without logical gaps or overlaps.");covered+=segment.RecordCount;Need(segment.Address+segment.RecordCount*h.RecordWords<=65536,"Buffer segment exceeds Modbus range.");Need(h.HeaderAddress+h.HeaderWords<=segment.Address||segment.Address+segment.RecordCount*h.RecordWords<=h.HeaderAddress,"Header overlaps a buffer segment.");}
-  Need(covered==h.Capacity,"Segments must contain exactly 300 records.");
+  int covered=0;foreach(var segment in segments){Need(segment.FirstRecord==covered&&segment.RecordCount>0&&segment.RecordCount<=h.Capacity,"Segments must cover all records without logical gaps or overlaps.");covered+=segment.RecordCount;Need(segment.Address+segment.RecordCount*h.RecordWords<=65536,"Buffer segment exceeds Modbus range.");Need(h.HeaderAddress+h.HeaderWords<=segment.Address||segment.Address+segment.RecordCount*h.RecordWords<=h.HeaderAddress,"Header overlaps a buffer segment.");}
+  Need(covered==h.Capacity,$"Segments must contain exactly {h.Capacity} records.");
   var physical=segments.OrderBy(x=>x.Address).ToArray();for(int i=1;i<physical.Length;i++)Need(physical[i-1].Address+physical[i-1].RecordCount*h.RecordWords<=physical[i].Address,"Physical buffer segments overlap.");
   var header=new[]{h.SequenceOffset,h.SequenceOffset+1,h.CountOffset,h.PositionOffset,h.StatusOffset};
   Need(header.All(x=>x>=0&&x<h.HeaderWords)&&header.Distinct().Count()==header.Length,"Header field offsets are invalid or overlap.");

@@ -1,4 +1,14 @@
-# V4.2.2 — Controller/register deletion and independent PLC history
+# V4.2.2 — 144-snapshot PLC history and controller/register deletion
+
+## September 20 update: one-day PLC buffers
+
+New PLC-history layouts now default to **144 snapshots at 10-minute intervals**, approximately **24 hours** of recovery. The per-PLC history page displays each controller's actual configured capacity and recovery hours. Segment validation uses that capacity, rather than requiring 300 records.
+
+Existing 300-snapshot configurations remain supported and are not silently resized. The PLC program and Watchdog mapping must agree: configure capacity 144 only after the PLC's count, wraparound and memory layout have been updated and verified. Layouts with imported history retain their structural-change protection and require a reviewed migration. This update does not program any PLC or change the installed laptop service.
+
+Saved Watchdog data remains available beyond the one-day PLC window. Live readings, software alarms, deletion buttons, backups and exports remain available. New synthetic coverage uses four independent floors with 15, 3, 5 and 1 sensors, covering one-day recovery, ring wraparound, duplicate imports, exact gaps, invalid headers, segmented buffers and isolated outages with no replayed alarms.
+
+The EXE and ZIP on this same V4.2.2 release have been rebuilt. See PLC-history.md for setup and the commissioning boundary.
 
 ## September 19 update: Delete controllers and registers
 

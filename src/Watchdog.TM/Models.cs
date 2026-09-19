@@ -214,7 +214,7 @@ public sealed class PlcHistoryLayout
 {
  public bool Enabled {get;set;}
  public string Verification {get;set;}="";
- public int Capacity {get;set;}=300;
+ public int Capacity {get;set;}=144;
  public int SyncSeconds {get;set;}=600;
  public int RecordWords {get;set;}
  public ushort? HeaderAddress {get;set;}

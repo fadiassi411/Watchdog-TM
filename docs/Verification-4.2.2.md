@@ -1,5 +1,13 @@
 # V4.2.2 validation
 
+## September 20: 144 snapshots
+- 51 new synthetic history checks passed for 15/3/5/1 sensors across four independent controllers: defaults and legacy 300 persistence, empty/partial/full rings, 24-hour recovery, wraparound, deduplication across database reopen, exact overwrite gaps, signed values/timestamps, segmented buffers, bad count/position/torn reads, and independent worker outage/recovery.
+- Historical imports and recovery leave live readings and alarm/email observation untouched.
+- The previous 300-snapshot tests remain active with explicit capacity 300. Deletion, SMTP and server/trend regression checks also passed: 133 checks total.
+- Compiler: zero warnings/errors. JavaScript syntax, deletion UI and session-resume checks passed.
+- Packaged-server HTTP checks passed: 144 default and mapping save, segmented total rejection, legacy 300 compatibility, switching an unimported layout back to 144, authentication/antiforgery, deletion, and updated browser assets.
+- Physical PLC memory, program changes and live commissioning remain unverified. No laptop service or PLC configuration is modified by this release process.
+
 ## September 19 deletion update
 - Release build completed with zero compiler warnings/errors; Windows x64 self-contained package retains runtime 10.0.9, matching the previous package.
 - 82 web regression checks passed, including 12 deletion checks: stale revision, missing ID, scoped sensor removal, channel cleanup, last-channel disable, backup contents, retained history labels/ownership, controller cascade and restart persistence.
