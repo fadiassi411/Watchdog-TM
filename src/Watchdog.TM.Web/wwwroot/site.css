@@ -6,3 +6,5 @@
 .smtp-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.smtp-check{display:flex;align-items:center;gap:8px;padding-top:12px}.smtp-check input{flex-shrink:0}.smtp-wide{grid-column:span 2}textarea{font:inherit;display:block;width:100%;padding:12px;border:1px solid #c8d5dd;border-radius:6px;margin-top:6px;resize:vertical}.mail-subscription{padding:20px 0;border-top:1px solid #dce6eb}.subscription-result{margin-left:12px;color:#087968}#mailResult{white-space:pre-wrap}#mailPassword+span{display:block;margin-top:7px;font-size:11px}@media(max-width:800px){.smtp-grid{grid-template-columns:1fr}.smtp-wide{grid-column:auto}}
 
 button.danger{background:#a52a32;color:white}button.danger:hover{background:#812129}
+
+.temperature-card.alarm-acknowledged{animation:none}.temperature-card.alarm-high.alarm-acknowledged{background:#fff0f0}.temperature-card.alarm-low.alarm-acknowledged{background:#fffbe3}

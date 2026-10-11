@@ -57,6 +57,8 @@ public sealed class Sensor
     // Local Watchdog thresholds, never Modbus addresses or writable PLC values.
     public double? SoftwareHighLimit { get; set; }
     public double? SoftwareLowLimit { get; set; }
+    public int AlarmDelaySeconds { get; set; }
+    public double AlarmHysteresis { get; set; }
     public ushort? HighAlarmOffset
     {
         get; set;
@@ -158,6 +160,9 @@ public static class Rules
         }
         foreach (var s in c.Sensors)
         {
+            if (s.AlarmDelaySeconds < 0 || s.AlarmDelaySeconds > 86400 || !double.IsFinite(s.AlarmHysteresis) || s.AlarmHysteresis < 0 ||
+                (s.SoftwareHighLimit is double high && s.SoftwareLowLimit is double low && s.AlarmHysteresis >= high-low))
+                throw new Exception("Alarm delay must be 0–86400 seconds. Hysteresis must be finite, non-negative and smaller than the distance between limits.");
             if ((s.SoftwareHighLimit.HasValue && !double.IsFinite(s.SoftwareHighLimit.Value)) ||
                 (s.SoftwareLowLimit.HasValue && !double.IsFinite(s.SoftwareLowLimit.Value)) ||
                 (s.SoftwareHighLimit.HasValue && s.SoftwareLowLimit.HasValue && s.SoftwareLowLimit >= s.SoftwareHighLimit))

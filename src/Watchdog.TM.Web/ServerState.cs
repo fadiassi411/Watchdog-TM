@@ -25,7 +25,7 @@ public sealed class ServerState : IHostedService
             Store.Save(c,"System","Automatically resumed configured live readings");
         Engine=new MonitorEngine(c,Store);
         Notifications=new AlarmNotifications(Store);
-        Engine.ReadingObserved+=(sensor,reading)=>{try{Notifications.Observe(Engine.Config,sensor,reading);}catch{MailFault="Email alarm observation could not be saved. Check server storage.";}};
+        Engine.ReadingObserved+=(sensor,reading)=>{try{Notifications.Observe(Engine.Config,sensor,reading);}catch{MailFault="Temperature alarm observation could not be saved. Check server storage.";}};
     }
     public Configuration Clone() => JsonSerializer.Deserialize<Configuration>(JsonSerializer.Serialize(Engine.Config))!;
     public async Task Save(Configuration c,string action)
@@ -39,6 +39,17 @@ public sealed class ServerState : IHostedService
         Store.Write(Store.EnsureHistory);
 
         Store.Save(c,"Administrator",action);
+        foreach(var old in Engine.Config.Sensors)
+        {
+            var next=c.Sensors.FirstOrDefault(x=>x.Id==old.Id);
+            if(next is null || next.SoftwareHighLimit!=old.SoftwareHighLimit || next.SoftwareLowLimit!=old.SoftwareLowLimit ||
+               next.AlarmDelaySeconds!=old.AlarmDelaySeconds || next.AlarmHysteresis!=old.AlarmHysteresis || next.Enabled!=old.Enabled || next.Retired!=old.Retired ||
+               next.ControllerId!=old.ControllerId || next.TemperatureOffset!=old.TemperatureOffset || next.Multiplier!=old.Multiplier || next.Offset!=old.Offset ||
+               next.TemperatureFunction!=old.TemperatureFunction || next.Format!=old.Format || next.Order!=old.Order ||
+               c.Controllers.First(x=>x.Id==next.ControllerId).Enabled!=Engine.Config.Controllers.First(x=>x.Id==old.ControllerId).Enabled ||
+               c.Settings.Simulation!=Engine.Config.Settings.Simulation)
+            {Notifications.Alarms.Reset(old.Id);Notifications.Reset(old.Id);}
+        }
         await Engine.Replace(c);
         if(c.Settings.Simulation||!c.Settings.MailEnabled||!c.Settings.AutomaticAlerts) Notifications.Reset();
         Revision=Guid.NewGuid().ToString();

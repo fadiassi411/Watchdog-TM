@@ -1,0 +1,90 @@
+name: Release V4.3.0
+
+on:
+  push:
+    tags:
+      - v4.3.0
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-v4.3.0
+  cancel-in-progress: false
+
+jobs:
+  windows-release:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.401
+      - name: Run full Windows regression suites
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet build tests/Watchdog.TM.Tests.csproj -c Release -m:1 -nr:false
+          if ($LASTEXITCODE -ne 0) { throw 'Core test build failed' }
+          dotnet tests/bin/Release/net10.0-windows/Watchdog.TM.Tests.dll
+          if ($LASTEXITCODE -ne 0) { throw 'Core regression tests failed' }
+          dotnet build tests/Watchdog.TM.Web.Tests -c Release -m:1 -nr:false
+          if ($LASTEXITCODE -ne 0) { throw 'Web test build failed' }
+          dotnet tests/Watchdog.TM.Web.Tests/bin/Release/net10.0-windows/Watchdog.TM.Web.Tests.dll
+          if ($LASTEXITCODE -ne 0) { throw 'Web regression tests failed' }
+      - name: Prepare Inno Setup
+        run: |
+          if (!(Test-Path 'C:/Program Files (x86)/Inno Setup 6/ISCC.exe')) {
+            choco install innosetup --version=6.4.3 --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed' }
+          }
+      - name: Build Windows server and installer
+        run: ./build-server.ps1
+      - name: Smoke-test packaged Windows server
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $data = Join-Path $env:RUNNER_TEMP 'watchdog-release-smoke'
+          $proc = Start-Process ./server/Watchdog.TM.Web.exe -ArgumentList @('--urls','http://127.0.0.1:5184','--Storage:DataDirectory',$data,'--Monitoring:MutexName','WatchdogTMRelease430') -PassThru
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              if ($proc.HasExited) { throw 'Packaged server exited before readiness' }
+              try { $health = Invoke-RestMethod http://127.0.0.1:5184/health; if ($health.status -eq 'running') { $ready = $true; break } } catch {}
+              Start-Sleep -Seconds 1
+            }
+            if (!$ready) { throw 'Packaged server did not become ready' }
+            $session = Invoke-RestMethod http://127.0.0.1:5184/api/session
+            if (!$session.setup -or $session.authenticated -or !$session.csrf) { throw 'Fresh session check failed' }
+            $page = Invoke-WebRequest http://127.0.0.1:5184/
+            if ($page.Content -notmatch 'V4.3.0' -or $page.Content -notmatch 'alarmHysteresis') { throw 'Release dashboard assets missing' }
+            $pdf = Invoke-WebRequest http://127.0.0.1:5184/help/Watchdog-TM-Help.pdf
+            if ($pdf.StatusCode -ne 200) { throw 'Release PDF missing' }
+          } finally { if (!$proc.HasExited) { Stop-Process -Id $proc.Id -Force } }
+      - name: Package release assets
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = 'work/release-4.3.0'
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          Copy-Item artifacts/Watchdog-TM-Server-4.3.0-Setup.exe $stage
+          Copy-Item server "$stage/server" -Recurse
+          Copy-Item docs/Release-4.3.0.md,docs/Alarm-management.md,docs/Server-setup.md $stage
+          Copy-Item docs/Third-party-licenses "$stage/Third-party-licenses" -Recurse
+          Compress-Archive -Path "$stage/*" -DestinationPath artifacts/Watchdog-TM-4.3.0.zip
+          Get-FileHash artifacts/Watchdog-TM-Server-4.3.0-Setup.exe,artifacts/Watchdog-TM-4.3.0.zip -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } |
+            Set-Content artifacts/SHA256SUMS.txt
+      - name: Retain verified build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Watchdog-TM-4.3.0
+          path: artifacts/*
+          if-no-files-found: error
+      - name: Publish separate V4.3.0 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v4.3.0 artifacts/Watchdog-TM-Server-4.3.0-Setup.exe artifacts/Watchdog-TM-4.3.0.zip artifacts/SHA256SUMS.txt --verify-tag --title "Watchdog TM V4.3.0" --notes-file docs/Release-4.3.0.md --latest
+          if ($LASTEXITCODE -ne 0) { throw 'V4.3.0 release publication failed; V4.2.2 has not been modified' }

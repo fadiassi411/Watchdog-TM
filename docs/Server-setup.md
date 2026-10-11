@@ -5,7 +5,7 @@ Watchdog TM uses the same server arrangement as Watchdog EM: a self-contained AS
 ## Installation and migration
 
 1. Save edits and close the old Watchdog TM desktop application.
-2. Run Watchdog-TM-Server-4.2.1-Setup.exe and approve Windows administrator elevation.
+2. Run Watchdog-TM-Server-4.3.0-Setup.exe and approve Windows administrator elevation.
 3. The installer copies the existing user's desktop database into C:\ProgramData\Watchdog TM\watchdog.db only if a server database does not already exist. It creates a migration backup. Existing server upgrades retain their database.
 4. The Watchdog Temperature Monitoring Server service starts automatically with delayed startup and restart-on-failure recovery.
 5. Open the Watchdog TM desktop shortcut or http://localhost:5081. Sign in using the existing TM administrator password. No default password is created. New installations create their password locally on the server PC.

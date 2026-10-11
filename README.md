@@ -1,10 +1,10 @@
-# Watchdog TM V4.2.2
+# Watchdog TM V4.3.0
 
 Windows x64 temperature monitoring server from MicroBrain. The self-contained ASP.NET Core application runs as the WatchdogTM Windows Service and is accessed through a browser on the local network.
 
 ## Install
 
-Download `Watchdog-TM-Server-4.2.2-Setup.exe` from the GitHub release, or extract it from `Watchdog-TM-4.2.2.zip`. Run the installer as administrator, then open http://localhost:5081. Other devices on the local network use http://SERVER-IP:5081. A fresh installation prompts for an administrator password locally. Existing server installations retain their configuration, password, license and history.
+Download `Watchdog-TM-Server-4.3.0-Setup.exe` from the GitHub release, or extract it from `Watchdog-TM-4.3.0.zip`. Run the installer as administrator, then open http://localhost:5081. Other devices on the local network use http://SERVER-IP:5081. A fresh installation prompts for an administrator password locally. Existing server installations retain their configuration, password, license and history.
 
 Keep the server powered and awake. Closing the browser does not stop monitoring. Configure verified RTU/TCP settings and temperature registers; live operation requires a signed TM license. The runtime contains public verification material only, never the supplier private key.
 
@@ -13,6 +13,7 @@ Keep the server powered and awake. Closing the browser does not stop monitoring.
 - Read-only Modbus RTU/TCP temperature acquisition (FC03/FC04); no PLC writes.
 - Persistent live mode; controller and sensor edits apply automatically.
 - Per-sensor software high/low thresholds with red/yellow blinking cards.
+- Web alarm acknowledgement, per-sensor activation delays and hysteresis to reduce repeated alerts; see [alarm management](docs/Alarm-management.md).
 - Trends with quick/custom periods up to one year, zoom, hover details, min/average/max and selectable chart intervals.
 - Configurable recording intervals from one second to one day. Recording faster does not increase controller polling speed.
 - SQLite history retained without automatic sample deletion; CSV and Excel export of all stored data from PLC history and combined trends; the legacy single-sensor export retains its 31-day limit.
@@ -33,7 +34,7 @@ dotnet run --project tests/Watchdog.TM.Web.Tests -c Release -m:1
 
 The installer is written to `artifacts/`. `src/Watchdog.TM.Web` shares core models, storage, transport and license verification with `src/Watchdog.TM`. The WPF desktop source and its documentation are retained for legacy reference; the server installer is the current release. Supplier tool source is separate from the customer runtime. Tests create temporary signing keys in memory.
 
-See [server setup](docs/Server-setup.md) and [release notes](docs/Release-4.2.2.md).
+See [server setup](docs/Server-setup.md) and [V4.3.0 release notes](docs/Release-4.3.0.md). The [V4.2.2 release notes](docs/Release-4.2.2.md) remain available.
 
 ## Customer Help
 Open Main > Help to view or download the bundled PDF. Main > About shows version and installation details. The guide is packaged at src/Watchdog.TM.Web/wwwroot/help/Watchdog-TM-Help.pdf and also included in the release ZIP. Regenerate it on a Python environment with ReportLab using tools/documentation/build_help.py.

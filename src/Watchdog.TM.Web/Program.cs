@@ -73,9 +73,9 @@ api.MapGet("/state",async (ServerState s)=>{ await s.Gate.WaitAsync(); try { ret
     revision=s.Revision,simulation=s.Engine.Config.Settings.Simulation,site=s.Engine.Config.Settings.Site,
     license=Security.LicenseStatus(s.Engine.Config),installationId=Security.InstallationId,
     controllers=s.Engine.Config.Controllers.ToArray(),
-    sensors=s.Engine.Config.Sensors.Select(x=>new{x.Id,x.ControllerId,x.Name,x.Location,x.Enabled,x.Retired,x.TemperatureOffset,x.TemperatureFunction,x.Format,x.Order,x.Multiplier,x.Offset,x.Decimals,x.SampleSeconds,x.SoftwareHighLimit,x.SoftwareLowLimit}).ToArray(),
-    readings=s.Engine.Config.Sensors.Select(x=>{var reading=s.Engine.Display(x);return new{id=x.Id,reading,alarm=SoftwareAlarms.Evaluate(x,reading)};}).ToArray(),states=s.Engine.States.ToDictionary(x=>x.Key,x=>new{x.Value.Status,x.Value.LastSuccess,x.Value.Error}),
-    fault=s.Store.Fault+" "+s.Engine.OperationalFault
+    sensors=s.Engine.Config.Sensors.Select(x=>new{x.Id,x.ControllerId,x.Name,x.Location,x.Enabled,x.Retired,x.TemperatureOffset,x.TemperatureFunction,x.Format,x.Order,x.Multiplier,x.Offset,x.Decimals,x.SampleSeconds,x.SoftwareHighLimit,x.SoftwareLowLimit,x.AlarmDelaySeconds,x.AlarmHysteresis}).ToArray(),
+    readings=s.Engine.Config.Sensors.Select(x=>{var reading=s.Engine.Display(x);var status=s.Notifications.Alarms.Current(x,reading);return new{id=x.Id,reading,alarm=status.Level,alarmStatus=status};}).ToArray(),states=s.Engine.States.ToDictionary(x=>x.Key,x=>new{x.Value.Status,x.Value.LastSuccess,x.Value.Error}),
+    fault=s.Store.Fault+" "+s.Engine.OperationalFault+" "+s.MailFault
 }); } finally { s.Gate.Release(); } });
 api.MapPost("/controller",async(ServerState s,ControllerEdit edit)=>{
     await s.Gate.WaitAsync();try{if(edit.Revision!=s.Revision)return Results.Conflict(new{error="Settings changed in another browser. Reload and retry."});var c=s.Clone();var existing=c.Controllers.FindIndex(x=>x.Id==edit.Controller.Id);if(existing<0){edit.Controller.Id=Guid.NewGuid();c.Controllers.Add(edit.Controller);}else c.Controllers[existing]=edit.Controller;await s.Save(c,"Controller setup updated; live monitoring applied automatically");return Results.Ok();}finally{s.Gate.Release();}
@@ -93,7 +93,18 @@ api.MapPost("/alarms/{id:guid}",async(Guid id,ServerState s,AlarmLimits input)=>
         if(input.Revision!=s.Revision)return Results.Conflict(new{error="Settings changed in another browser. Reload and retry."});
         var c=s.Clone();var sensor=c.Sensors.Single(x=>x.Id==id);
         sensor.SoftwareHighLimit=input.High;sensor.SoftwareLowLimit=input.Low;
-        await s.Save(c,$"Software alarm limits updated for {sensor.Id}: high={input.High}, low={input.Low}. No PLC write.");
+        sensor.AlarmDelaySeconds=input.DelaySeconds;sensor.AlarmHysteresis=input.Hysteresis;
+        await s.Save(c,$"Software alarms updated for {sensor.Id}: high={input.High}, low={input.Low}, delay={input.DelaySeconds}s, hysteresis={input.Hysteresis}°C. No PLC write.");
+        return Results.Ok();
+    }finally{s.Gate.Release();}
+});
+api.MapPost("/alarms/{id:guid}/acknowledge",async(Guid id,ServerState s,AlarmAcknowledgement input)=>{
+    await s.Gate.WaitAsync();try{
+        var sensor=s.Engine.Config.Sensors.FirstOrDefault(x=>x.Id==id);
+        if(sensor is null)return Results.NotFound();
+        var status=s.Notifications.Alarms.Current(sensor,s.Engine.Display(sensor));
+        if(status.Level is not ("High" or "Low") || !s.Notifications.Alarms.Acknowledge(id,input.Episode))
+            return Results.Conflict(new{error="The alarm changed or is unavailable. Refresh and retry."});
         return Results.Ok();
     }finally{s.Gate.Release();}
 });
@@ -118,7 +129,7 @@ api.MapGet("/export/{id:guid}",(Guid id,DateTimeOffset from,DateTimeOffset to,Se
 api.MapPost("/license",async(ServerState s,LicenseInput input)=>{await s.Gate.WaitAsync();try{Security.License(input.Json);var c=s.Clone();c.Settings.LicenseJson=input.Json;Security.Capacity(c);await s.Save(c,"TM license imported");return Results.Ok();}finally{s.Gate.Release();}});
 api.MapPost("/password",async(ServerState s,PasswordInput input,HttpContext ctx)=>{await s.Gate.WaitAsync();try{if(!Security.Verify(input.Current,s.Engine.Config.Settings.PasswordHash))return Results.BadRequest(new{error="Current password is incorrect."});if(input.Password.Length>256)return Results.BadRequest();var c=s.Clone();c.Settings.PasswordHash=Security.Hash(input.Password);await s.Save(c,"Administrator password changed");await ctx.SignOutAsync();return Results.Ok();}finally{s.Gate.Release();}});
 api.MapGet("/backup",(ServerState s)=>{var path=Path.Combine(s.DirectoryPath,"download-"+Guid.NewGuid()+".db");try{s.Store.Backup(path);return Results.File(File.ReadAllBytes(path),"application/octet-stream","WatchdogTM-backup.db");}finally{if(File.Exists(path))File.Delete(path);}});
-api.MapPost("/restore",async(HttpContext ctx,ServerState s)=>{var path=Path.Combine(s.DirectoryPath,"restore-"+Guid.NewGuid()+".db");await s.Gate.WaitAsync();try{if(ctx.Request.ContentLength is null or > 100_000_000)return Results.BadRequest(new{error="Select a backup up to 100 MB."});await using(var output=File.Create(path))await ctx.Request.Body.CopyToAsync(output);var candidate=s.Store.InspectBackup(path);Rules.Validate(candidate);candidate.Settings.LicenseJson=s.Engine.Config.Settings.LicenseJson;candidate.Settings.PasswordHash=s.Engine.Config.Settings.PasswordHash;candidate.Settings.Simulation=true;candidate.Settings.CommissionedSensors.Clear();s.Store.Backup(Path.Combine(s.DirectoryPath,"before-restore-"+DateTime.UtcNow.ToString("yyyyMMddHHmmss")+".db"));await s.Engine.Stop();try{s.Store.Restore(path);await s.Save(candidate,"Backup restored; demonstration mode until live monitoring restarted");}catch{await s.Engine.Replace(s.Engine.Config);throw;}return Results.Ok();}finally{s.Gate.Release();if(File.Exists(path))File.Delete(path);}});
+api.MapPost("/restore",async(HttpContext ctx,ServerState s)=>{var path=Path.Combine(s.DirectoryPath,"restore-"+Guid.NewGuid()+".db");await s.Gate.WaitAsync();try{if(ctx.Request.ContentLength is null or > 100_000_000)return Results.BadRequest(new{error="Select a backup up to 100 MB."});await using(var output=File.Create(path))await ctx.Request.Body.CopyToAsync(output);var candidate=s.Store.InspectBackup(path);Rules.Validate(candidate);candidate.Settings.LicenseJson=s.Engine.Config.Settings.LicenseJson;candidate.Settings.PasswordHash=s.Engine.Config.Settings.PasswordHash;candidate.Settings.Simulation=true;candidate.Settings.CommissionedSensors.Clear();s.Store.Backup(Path.Combine(s.DirectoryPath,"before-restore-"+DateTime.UtcNow.ToString("yyyyMMddHHmmss")+".db"));await s.Engine.Stop();try{s.Store.Restore(path);s.Notifications.Ensure();s.Notifications.Alarms.ResetAll();s.Notifications.Reset();await s.Save(candidate,"Backup restored; demonstration mode until live monitoring restarted");}catch{await s.Engine.Replace(s.Engine.Config);throw;}return Results.Ok();}finally{s.Gate.Release();if(File.Exists(path))File.Delete(path);}});
 api.MapGet("/audit",(ServerState s)=>s.Store.Audits());
 app.Run();
 static string Stamp(string hash)=>Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(hash)));
@@ -128,7 +139,8 @@ record SensorEdit(string Revision,Sensor Sensor);
 record Mode(bool Simulation);
 record LicenseInput(string Json);
 record PasswordInput(string Current,string Password);
-record AlarmLimits(string Revision,double? High,double? Low);
+record AlarmLimits(string Revision,double? High,double? Low,int DelaySeconds=0,double Hysteresis=0);
+record AlarmAcknowledgement(string Episode);
 
 
 

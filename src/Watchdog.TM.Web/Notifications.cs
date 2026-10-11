@@ -52,8 +52,10 @@ public static class SmtpDelivery
 public sealed class AlarmNotifications
 {
     readonly Store store;
-    public AlarmNotifications(Store store){this.store=store;Ensure();}
+    public TemperatureAlarms Alarms { get; }
+    public AlarmNotifications(Store store){this.store=store;Ensure();Alarms=new TemperatureAlarms(store);}
     public void Ensure(){store.Write(db=>Store.Run(db,"""
+        CREATE TABLE IF NOT EXISTS temperature_alarm_state(sensor TEXT PRIMARY KEY,json TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS mail_alarm_state(sensor TEXT PRIMARY KEY, level TEXT NOT NULL, episode TEXT NOT NULL, observed TEXT NOT NULL, reminder TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS mail_outbox(id INTEGER PRIMARY KEY, sensor TEXT NOT NULL, episode TEXT NOT NULL, kind TEXT NOT NULL, recipients TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, message_id TEXT NOT NULL UNIQUE, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next TEXT NOT NULL, error TEXT NOT NULL DEFAULT '',created TEXT NOT NULL);
         """));}
@@ -61,8 +63,10 @@ public sealed class AlarmNotifications
     public void Reset(Guid? id=null){store.Write(db=>{if(id is {} sensor){Store.Run(db,"DELETE FROM mail_alarm_state WHERE sensor=$0",sensor.ToString());Store.Run(db,"UPDATE mail_outbox SET status='Cancelled',error='Notification configuration changed' WHERE sensor=$0 AND status='Pending'",sensor.ToString());}else{Store.Run(db,"DELETE FROM mail_alarm_state");Store.Run(db,"UPDATE mail_outbox SET status='Cancelled',error='Notification configuration changed' WHERE status='Pending'");}});}
     public void Observe(Configuration c,Sensor s,Reading r)
     {
+        var controller=c.Controllers.First(x=>x.Id==s.ControllerId);
+        var alarm=Alarms.Observe(s,r,Math.Max(controller.PollSeconds*3,controller.TimeoutMs/1000.0*2+2));
         if(!Eligible(c,s))return;
-        var level=SoftwareAlarms.Evaluate(s,r);if(level=="Unavailable")return; // An outage is not a recovery.
+        var level=alarm.Level;if(level=="Unavailable")return; // An outage is not a recovery.
         bool Subscribed(string value)=>value=="High"?s.EmailHigh:value=="Low"&&s.EmailLow;
         store.Write(db=>{
             using var q=db.CreateCommand();
@@ -79,7 +83,7 @@ public sealed class AlarmNotifications
                 if(old!="Normal"&&Subscribed(old)&&level=="Normal"&&s.RecoveryEmail)Queue("Return to normal",episode,observed);
                 episode=Guid.NewGuid().ToString();observed=Store.Utc(r.At);reminder=observed;
                 if(Subscribed(level))Queue(level+" temperature",episode,observed);
-            }else if(Subscribed(level)&&s.Reminders&&DateTimeOffset.TryParse(reminder,out var last)&&r.At-last>=TimeSpan.FromMinutes(s.ReminderMinutes)){
+            }else if(alarm.AcknowledgedAt is null&&Subscribed(level)&&s.Reminders&&DateTimeOffset.TryParse(reminder,out var last)&&r.At-last>=TimeSpan.FromMinutes(s.ReminderMinutes)){
                 Queue(level+" reminder",episode,observed);reminder=Store.Utc(r.At);
             }
             Run("INSERT INTO mail_alarm_state(sensor,level,episode,observed,reminder) VALUES($0,$1,$2,$3,$4) ON CONFLICT(sensor) DO UPDATE SET level=excluded.level,episode=excluded.episode,observed=excluded.observed,reminder=excluded.reminder",s.Id.ToString(),level,episode,observed,reminder);
@@ -92,6 +96,7 @@ public sealed class AlarmNotifications
         using(var db=store.Open()){using var q=db.CreateCommand();q.CommandText="SELECT id,sensor,kind,recipients,subject,body,message_id,attempts FROM mail_outbox WHERE status='Pending' AND next<=$now ORDER BY id LIMIT 1";q.Parameters.AddWithValue("$now",Store.Utc(DateTimeOffset.UtcNow));using var r=q.ExecuteReader();if(!r.Read())return;id=r.GetInt64(0);sensorId=Guid.Parse(r.GetString(1));kind=r.GetString(2);recipients=r.GetString(3);subject=r.GetString(4);body=r.GetString(5);messageId=r.GetString(6);attempts=r.GetInt32(7);}
         var sensor=c.Sensors.FirstOrDefault(x=>x.Id==sensorId);
         if(sensor==null||!Eligible(c,sensor)||sensor.Recipients!=recipients){store.Write(db=>Store.Run(db,"UPDATE mail_outbox SET status='Cancelled',error='Sensor notifications disabled or recipients changed' WHERE id=$0",id));return;}
+        if(kind.EndsWith(" reminder")&&Alarms.IsAcknowledged(sensorId)){store.Write(db=>Store.Run(db,"UPDATE mail_outbox SET status='Cancelled',error='Alarm acknowledged' WHERE id=$0",id));return;}
         try{await send(c.Settings,recipients,subject,body,messageId,ct);store.Write(db=>Store.Run(db,"UPDATE mail_outbox SET status='Submitted to mail server',attempts=attempts+1,error='' WHERE id=$0",id));}
         catch(OperationCanceledException) when(ct.IsCancellationRequested){throw;}
         catch(Exception ex){store.Write(db=>Store.Run(db,"UPDATE mail_outbox SET status=$0,attempts=attempts+1,next=$1,error=$2 WHERE id=$3",attempts>=4?"Failed":"Pending",Store.Utc(DateTimeOffset.UtcNow.AddSeconds(Math.Min(1800,30*Math.Pow(2,attempts)))),SmtpDelivery.SafeError(ex),id));}

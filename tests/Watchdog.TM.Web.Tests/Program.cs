@@ -1,5 +1,7 @@
 using Watchdog.TM;
 using Microsoft.Extensions.Configuration;
+await TemperatureAlarmTests.Run();
+if(args.Contains("--alarms-only"))return;
 var path=Path.Combine(Environment.CurrentDirectory,"work","auto-live-test-"+Guid.NewGuid());
 Directory.CreateDirectory(path);
 var c=new Configuration();c.Settings.Simulation=false;
