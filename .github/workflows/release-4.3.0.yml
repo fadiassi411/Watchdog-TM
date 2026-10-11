@@ -1,6 +1,7 @@
 name: Release V4.3.0
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - v4.3.0
@@ -21,6 +22,8 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: v4.3.0
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.401
