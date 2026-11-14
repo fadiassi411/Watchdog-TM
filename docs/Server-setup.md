@@ -5,7 +5,7 @@ Watchdog TM uses the same server arrangement as Watchdog EM: a self-contained AS
 ## Installation and migration
 
 1. Save edits and close the old Watchdog TM desktop application.
-2. Run Watchdog-TM-Server-4.3.0-Setup.exe and approve Windows administrator elevation.
+2. Run Watchdog-TM-Server-4.3.1-Setup.exe and approve Windows administrator elevation.
 3. The installer copies the existing user's desktop database into C:\ProgramData\Watchdog TM\watchdog.db only if a server database does not already exist. It creates a migration backup. Existing server upgrades retain their database.
 4. The Watchdog Temperature Monitoring Server service starts automatically with delayed startup and restart-on-failure recovery.
 5. Open the Watchdog TM desktop shortcut or http://localhost:5081. Sign in using the existing TM administrator password. No default password is created. New installations create their password locally on the server PC.
@@ -22,7 +22,7 @@ This follows EM's local HTTP deployment. Use a trusted LAN; no public internet a
 
 Connect the USB/RS485 adapter to the server computer, not to the browsing device. Configure RTU/TCP under Settings > Controllers and sensors. Enter only the temperature register, read function, data type, word order, multiplier and correction. A 32-bit value reads two consecutive words. The server never writes to the PLC or reads alarm/limit registers. Keep the existing DDC program unchanged.
 
-If in demonstration mode, select Settings > Monitoring and license > Switch to live monitoring once. The existing signed TM license remains valid on this PC. Saved controller and sensor changes apply automatically while live mode is enabled. Polling continues when the browser closes or Windows is locked/signed out. Keep the computer powered, awake and the adapter connected. Sleep or shutdown interrupts collection.
+If in demonstration mode, select Settings > Monitoring and license > Switch to live monitoring once. The existing signed TM license remains valid on this PC. Saved controller and sensor changes apply automatically while live mode is enabled. Polling continues when the browser closes or Windows is locked/signed out. Enable **Keep this computer awake while live monitoring** to block ordinary Windows idle sleep; the status confirms whether Windows accepted the request. Keep the computer powered and the adapter connected. Shutdown, power loss, forced sleep and laptop-lid policies can still interrupt collection; use verified PLC history to recover those gaps.
 
 The historical recording interval is separate from the controller polling interval. Trends support periods up to one year; Excel downloads support up to 31 days per export. Software high/low temperature alarms are evaluated internally; SMTP email delivery is configurable under Settings > Email and SMTP; it is disabled by default. Legacy historical database records and SMTP configuration are retained, but old PLC-alarm control fields are not exposed in the web UI.
 

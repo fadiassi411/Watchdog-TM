@@ -10,7 +10,7 @@ OUT=ROOT/'src/Watchdog.TM.Web/wwwroot/help/Watchdog-TM-Help.pdf'
 OUT.parent.mkdir(parents=True,exist_ok=True)
 W,H=595.276,841.89
 NAVY=HexColor('#102b3b'); TEAL=HexColor('#078c86'); INK=HexColor('#193242'); MUTED=HexColor('#637887'); PALE=HexColor('#eef6f6')
-c=canvas.Canvas(str(OUT),pagesize=(W,H));c.setTitle('Watchdog TM V4.3.0 | Customer Help Guide');c.setAuthor('MicroBrain');c.setSubject('Installation, temperature monitoring, software alarms, trends and monthly Excel exports')
+c=canvas.Canvas(str(OUT),pagesize=(W,H));c.setTitle('Watchdog TM V4.3.1 | Customer Help Guide');c.setAuthor('MicroBrain');c.setSubject('Installation, temperature monitoring, software alarms, trends and monthly Excel exports')
 styles={
  'body':ParagraphStyle('body',fontName='Helvetica',fontSize=10.4,leading=16,textColor=INK,spaceAfter=10),
  'small':ParagraphStyle('small',fontName='Helvetica',fontSize=9,leading=13,textColor=MUTED),
@@ -53,10 +53,10 @@ def new(key,title,sub):
  c.setFillColor(INK);c.setFont('Helvetica-Bold',25);c.drawString(46,H-87,title)
  y=H-108;text(sub,'small');y-=12
  c.setStrokeColor(HexColor('#dde6ea'));c.line(46,45,W-46,45)
- c.setFillColor(MUTED);c.setFont('Helvetica',8);c.drawString(46,30,'MicroBrain  |  Watchdog TM V4.3.0  |  11 October 2026');c.drawRightString(W-46,30,f'{page:02d}')
+ c.setFillColor(MUTED);c.setFont('Helvetica',8);c.drawString(46,30,'MicroBrain  |  Watchdog TM V4.3.1  |  11 October 2026');c.drawRightString(W-46,30,f'{page:02d}')
  c.linkRect('', 'contents',(46,22,190,40),relative=0,thickness=0)
 
-new('contents','Watch every degree.','WATCHDOG TEMPERATURE MONITORING  |  V4.3.0  |  WINDOWS SERVER')
+new('contents','Watch every degree.','WATCHDOG TEMPERATURE MONITORING  |  V4.3.1  |  WINDOWS SERVER')
 heading('Customer Help Guide')
 text('Set up your controller, monitor readings, configure local alarms and retrieve temperature history from any browser on your local network.')
 note('<b>Always-on monitoring</b><br/>Watchdog runs as a Windows Service. Closing the browser does not stop collection. Keep the server computer powered, awake and connected to the controller.')
@@ -64,11 +64,11 @@ heading('Find what you need')
 for label,key,num in [('Install and connect','install','02'),('Controller communication','controller','03'),('Sensor and register setup','sensor','04'),('Dashboard and software alarms','alarms','05'),('Explore temperature trends','trends','06'),('Monthly Excel reports','excel','07'),('Backups and daily operation','backup','08'),('Troubleshooting and About','support','09'),('Email and SMTP','smtp','10')]:
  text(f'<link href="#{key}" color="#078c86">{num} &nbsp; {label}</link>')
 y-=10
-text('This guide describes the V4.3.0 web server. Older desktop screens may differ. Example register addresses and alarm limits are illustrations, not a controller commissioning map.','small')
+text('This guide describes the V4.3.1 web server. Older desktop screens may differ. Example register addresses and alarm limits are illustrations, not a controller commissioning map.','small')
 
 new('install','01 / Install and connect','Audience: the person installing or maintaining the server.')
 heading('Install on the server computer')
-text('1. If the old Watchdog TM desktop app is running, save your edits and close it.<br/>2. Run <b>Watchdog-TM-Server-4.3.0-Setup.exe</b> with administrator approval.<br/>3. Wait for installation and service startup to finish.<br/>4. Open the <b>Watchdog TM Server</b> shortcut, or browse to <b>http://localhost:5081</b>.')
+text('1. If the old Watchdog TM desktop app is running, save your edits and close it.<br/>2. Run <b>Watchdog-TM-Server-4.3.1-Setup.exe</b> with administrator approval.<br/>3. Wait for installation and service startup to finish.<br/>4. Open the <b>Watchdog TM Server</b> shortcut, or browse to <b>http://localhost:5081</b>.')
 heading('Sign in')
 text('On a new installation, create an administrator password from the server computer. Use at least 10 characters. An existing installation keeps its current administrator password, license, configuration and history.')
 heading('Connect from another computer or phone')
@@ -140,7 +140,7 @@ text('Use <b>Settings &gt; Monitoring and license</b> to change the administrato
 new('support','08 / Troubleshooting and About','Use the symptom to narrow the next check.')
 table([['Symptom','Next check'],['Website does not open','Check server power and the WatchdogTM service. On the server try http://localhost:5081. On another device check the server IP, network and firewall.'],['Demonstration banner','Review the real controller/sensor configuration and license, then switch to live monitoring once.'],['No controller reading','Check COM/IP, unit ID, serial settings, wiring and register map. Use Test connection. Close other programs using the COM port.'],['Value is unexpected','Verify register offset, FC03/FC04, signed/unsigned format, word order and scaling. Do not change the PLC program just to match an assumed map.'],['Trend is empty','Check the chosen sensor, period and server/device clocks. Only recorded history can be displayed. Invalid readings appear as gaps.'],['Excel export is refused','Select a valid From/To range of up to 31 elapsed days. Split a longer period.'],['Old page after an update','Refresh the browser with Ctrl+F5 to reload its files.']],[150,W-242])
 heading('About Watchdog TM')
-text('<b>Product:</b> Watchdog Temperature Monitoring<br/><b>Version:</b> V4.3.0 Web<br/><b>Publisher:</b> MicroBrain by Fadi Assi<br/><b>Platform:</b> .NET 10, Windows x64, Windows Service<br/><b>Protocol:</b> Read-only Modbus RTU/TCP, FC03/FC04<br/><b>Storage:</b> Local SQLite database')
+text('<b>Product:</b> Watchdog Temperature Monitoring<br/><b>Version:</b> V4.3.1 Web<br/><b>Publisher:</b> MicroBrain by Fadi Assi<br/><b>Platform:</b> .NET 10, Windows x64, Windows Service<br/><b>Protocol:</b> Read-only Modbus RTU/TCP, FC03/FC04<br/><b>Storage:</b> Local SQLite database')
 text('Open <b>Main &gt; About</b> for this installation\'s license status and installation ID. Open <b>Help</b> to view or download this guide. When reporting an issue, include the version, affected sensor, exact message and time; exclude passwords and private backups.','small')
 
 new('smtp','09 / Email and SMTP','Settings > Email and SMTP')

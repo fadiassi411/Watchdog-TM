@@ -70,7 +70,7 @@ api.MapPlcHistory();
 api.MapDeletion();
 api.MapPost("/logout",async(HttpContext ctx)=>{await ctx.SignOutAsync();return Results.Ok();});
 api.MapGet("/state",async (ServerState s)=>{ await s.Gate.WaitAsync(); try { return Results.Ok(new{
-    revision=s.Revision,simulation=s.Engine.Config.Settings.Simulation,site=s.Engine.Config.Settings.Site,
+    revision=s.Revision,simulation=s.Engine.Config.Settings.Simulation,site=s.Engine.Config.Settings.Site,keepComputerAwake=s.Engine.Config.Settings.KeepComputerAwake,awakeStatus=s.PowerAvailability.Status,
     license=Security.LicenseStatus(s.Engine.Config),installationId=Security.InstallationId,
     controllers=s.Engine.Config.Controllers.ToArray(),
     sensors=s.Engine.Config.Sensors.Select(x=>new{x.Id,x.ControllerId,x.Name,x.Location,x.Enabled,x.Retired,x.TemperatureOffset,x.TemperatureFunction,x.Format,x.Order,x.Multiplier,x.Offset,x.Decimals,x.SampleSeconds,x.SoftwareHighLimit,x.SoftwareLowLimit,x.AlarmDelaySeconds,x.AlarmHysteresis}).ToArray(),
@@ -111,6 +111,9 @@ api.MapPost("/alarms/{id:guid}/acknowledge",async(Guid id,ServerState s,AlarmAck
 api.MapPost("/mode",async(ServerState s,Mode input)=>{
     await s.Gate.WaitAsync();try{var c=s.Clone();c.Settings.Simulation=input.Simulation;if(!input.Simulation){Rules.Validate(c);Security.Capacity(c);if(c.Controllers.Any(x=>x.Enabled&&x.Protocol==Protocol.Simulation)||c.Sensors.Any(x=>x.Enabled&&!x.Retired&&!x.Mapped))return Results.BadRequest(new{error="Enable a real controller and set each active sensor temperature register."});if(!c.Controllers.Any(x=>x.Enabled)||!c.Sensors.Any(x=>x.Enabled&&!x.Retired))return Results.BadRequest(new{error="Enable a controller and sensor first."});c.Settings.CommissionedSensors=c.Sensors.Where(x=>!x.Retired&&x.Enabled).Select(x=>x.Id).ToList();}await s.Save(c,input.Simulation?"Switched to demonstration":"Started temperature-only live monitoring");return Results.Ok();}finally{s.Gate.Release();}
 });
+api.MapPost("/power",async(ServerState s,PowerInput input)=>{
+    await s.Gate.WaitAsync();try{if(input.Revision!=s.Revision)return Results.Conflict(new{error="Settings changed in another browser. Reload and retry."});var c=s.Clone();c.Settings.KeepComputerAwake=input.KeepComputerAwake;await s.Save(c,input.KeepComputerAwake?"Enabled Windows awake request for live monitoring":"Disabled Windows awake request");return Results.Ok(new{status=s.PowerAvailability.Status});}finally{s.Gate.Release();}
+});
 api.MapPost("/test/{id:guid}",async(Guid id,ServerState s,CancellationToken ct)=>{await s.Gate.WaitAsync(ct);try{var sensor=s.Engine.Config.Sensors.Single(x=>x.Id==id);var controller=s.Engine.Config.Controllers.Single(x=>x.Id==sensor.ControllerId);var value=await s.Engine.Transport.ReadTemperature(controller,sensor,ct);return Results.Ok(new{value,at=DateTimeOffset.UtcNow,address=sensor.TemperatureOffset});}finally{s.Gate.Release();}});
 api.MapGet("/trend/{id:guid}",(Guid id,DateTimeOffset from,DateTimeOffset to,int seconds,ServerState s,HttpContext ctx)=>{
     if(!s.Engine.Config.Sensors.Any(x=>x.Id==id))return Results.NotFound();
@@ -137,6 +140,7 @@ record Login(string Password);
 record ControllerEdit(string Revision,Controller Controller);
 record SensorEdit(string Revision,Sensor Sensor);
 record Mode(bool Simulation);
+record PowerInput(string Revision,bool KeepComputerAwake);
 record LicenseInput(string Json);
 record PasswordInput(string Current,string Password);
 record AlarmLimits(string Revision,double? High,double? Low,int DelaySeconds=0,double Hysteresis=0);

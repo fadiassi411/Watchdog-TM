@@ -20,7 +20,13 @@ public static class Trends
               SUM(CASE WHEN quality IN ('VALID','SIMULATION / VALID') AND value IS NOT NULL THEN 1 ELSE 0 END),
               SUM(CASE WHEN quality NOT IN ('VALID','SIMULATION / VALID') OR value IS NULL THEN 1 ELSE 0 END),
               SUM(CASE WHEN quality LIKE 'SIMULATION / %' THEN 1 ELSE 0 END)
-            FROM samples WHERE sensor=$id AND at >= $from AND at <= $to
+            FROM (
+              SELECT at,value,quality FROM samples
+              WHERE sensor=$id AND at >= $from AND at <= $to
+              UNION ALL
+              SELECT at,value,quality FROM plc_history_values
+              WHERE sensor=$id AND at >= $from AND at <= $to
+            )
             GROUP BY bucket ORDER BY bucket
             """;
         q.Parameters.AddWithValue("$from",from.UtcDateTime.ToString("O"));

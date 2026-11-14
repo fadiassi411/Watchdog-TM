@@ -7,6 +7,7 @@ public sealed class ServerState : IHostedService
     public Store Store { get; }
     public MonitorEngine Engine { get; }
     public AlarmNotifications Notifications { get; }
+    public PowerAvailability PowerAvailability { get; } = new();
     public string MailFault { get; set; } = "";
     public SemaphoreSlim Gate { get; } = new(1,1);
     public string Revision { get; private set; } = Guid.NewGuid().ToString();
@@ -51,10 +52,11 @@ public sealed class ServerState : IHostedService
             {Notifications.Alarms.Reset(old.Id);Notifications.Reset(old.Id);}
         }
         await Engine.Replace(c);
+        PowerAvailability.Apply(c.Settings.KeepComputerAwake && !c.Settings.Simulation && c.Controllers.Any(x=>x.Enabled) && c.Sensors.Any(x=>x.Enabled&&!x.Retired));
         if(c.Settings.Simulation||!c.Settings.MailEnabled||!c.Settings.AutomaticAlerts) Notifications.Reset();
         Revision=Guid.NewGuid().ToString();
     }
-    public Task StartAsync(CancellationToken ct) { Engine.Start(); return Task.CompletedTask; }
-    public Task StopAsync(CancellationToken ct) => Engine.Stop();
+    public Task StartAsync(CancellationToken ct) { Engine.Start(); PowerAvailability.Apply(Engine.Config.Settings.KeepComputerAwake && !Engine.Config.Settings.Simulation && Engine.Config.Controllers.Any(x=>x.Enabled) && Engine.Config.Sensors.Any(x=>x.Enabled&&!x.Retired)); return Task.CompletedTask; }
+    public async Task StopAsync(CancellationToken ct) { PowerAvailability.Apply(false); await Engine.Stop(); }
 }
 

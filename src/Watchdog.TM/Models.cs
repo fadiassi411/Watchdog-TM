@@ -112,6 +112,7 @@ public sealed class Sensor
 public sealed class Settings
 {
     public bool Simulation { get; set; } = true; public string Site { get; set; } = "Medical refrigerator monitoring";
+    public bool KeepComputerAwake { get; set; } = false;
     public bool AudibleAlarm { get; set; } = true; public bool DailyBackup { get; set; } = false; public string BackupFolder { get; set; } = ""; public int RetentionDays { get; set; } = 30;
     public bool MailEnabled { get; set; } = false;
     public bool AutomaticAlerts { get; set; } = false;

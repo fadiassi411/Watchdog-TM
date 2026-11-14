@@ -26,11 +26,14 @@ Check(!restarted.Engine.Config.Settings.Simulation&&restarted.Engine.Config.Sett
 Check(restarted.Engine.Config.Sensors[0].TemperatureOffset==4197&&restarted.Engine.Config.Controllers[0].PollSeconds==3,"saved mappings survive restart");
 var trendStore=new Store(Path.Combine(path,"trend.db"));var t=new DateTimeOffset(2026,9,1,0,0,0,TimeSpan.Zero);var tid=Guid.NewGuid();
 trendStore.Sample(new(tid,t.AddSeconds(1),2,"VALID"));trendStore.Sample(new(tid,t.AddSeconds(15),8,"VALID"));trendStore.Sample(new(tid,t.AddSeconds(30),999,"OFFLINE"));trendStore.Sample(new(tid,t.AddSeconds(60),4,"VALID"));trendStore.Sample(new(tid,t.AddSeconds(180),null,"OFFLINE"));
+var recoveredController=Guid.NewGuid();
+PlcHistory.Import(trendStore,recoveredController,[new PlcSnapshot(1,t.AddSeconds(120),0,600,new(){{tid,6}},"recovered-trend-test")]);
 var trend=System.Text.Json.JsonSerializer.SerializeToElement(Trends.Read(trendStore,tid,t,t.AddMinutes(5),60,default));var pts=trend.GetProperty("points");
-Check(pts.GetArrayLength()==3,"trend groups only occupied time intervals");
+Check(pts.GetArrayLength()==4,"trend groups live and recovered PLC intervals");
 Check(pts[0].GetProperty("Average").GetDouble()==5&&pts[0].GetProperty("Minimum").GetDouble()==2&&pts[0].GetProperty("Maximum").GetDouble()==8,"trend preserves extrema and averages only valid readings");
-Check(pts[0].GetProperty("Missing").GetInt64()==1&&pts[2].GetProperty("Average").ValueKind==System.Text.Json.JsonValueKind.Null,"invalid readings and missing intervals remain unavailable");
+Check(pts[0].GetProperty("Missing").GetInt64()==1&&pts[3].GetProperty("Average").ValueKind==System.Text.Json.JsonValueKind.Null,"invalid readings and missing intervals remain unavailable");
 Check(pts[1].GetProperty("At").GetDateTimeOffset()==t.AddSeconds(60),"interval boundary assigned to correct time bucket");
+Check(pts[2].GetProperty("Average").GetDouble()==6,"trend includes PLC history recovered after a PC sleep gap");
 var yearly=System.Text.Json.JsonSerializer.SerializeToElement(Trends.Read(trendStore,tid,t,t.AddDays(365),1,default));Check(yearly.GetProperty("intervalSeconds").GetInt32()>=26280,"year view automatically bounds chart density");
 try{Trends.Read(trendStore,tid,t,t.AddDays(367),60,default);throw new Exception("Invalid range accepted");}catch(ArgumentException){Console.WriteLine("PASS excessive trend period rejected");}
 await SmtpTests.Run();
