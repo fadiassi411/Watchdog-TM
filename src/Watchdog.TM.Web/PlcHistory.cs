@@ -107,7 +107,7 @@ public sealed class PlcHistoryWorker(ServerState server,Func<Controller,ushort,u
      due=DateTimeOffset.UtcNow.AddSeconds(c.History.SyncSeconds);
     }
    }catch(OperationCanceledException)when(ct.IsCancellationRequested){return;}
-   catch(Exception ex){Progress[id]=new("Retrying",ex is IOException or ArgumentException?ex.Message:"History download failed. Check PLC connection and mapping.",Progress.GetValueOrDefault(id)?.LastSuccess,0);due=DateTimeOffset.UtcNow.AddSeconds(30);}
+   catch(Exception ex){var detail=ex.GetBaseException().Message;Progress[id]=new("Retrying",$"History download failed: {detail}",Progress.GetValueOrDefault(id)?.LastSuccess,0);due=DateTimeOffset.UtcNow.AddSeconds(30);}
    await Task.Delay(1000,ct);
   }
  }

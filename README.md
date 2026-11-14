@@ -1,10 +1,10 @@
-# Watchdog TM V4.3.1
+# Watchdog TM V4.3.2
 
 Windows x64 temperature monitoring server from MicroBrain. The self-contained ASP.NET Core application runs as the WatchdogTM Windows Service and is accessed through a browser on the local network.
 
 ## Install
 
-Download `Watchdog-TM-Server-4.3.1-Setup.exe` from the GitHub release, or extract it from `Watchdog-TM-4.3.1.zip`. Run the installer as administrator, then open http://localhost:5081. Other devices on the local network use http://SERVER-IP:5081. A fresh installation prompts for an administrator password locally. Existing server installations retain their configuration, password, license and history.
+Download `Watchdog-TM-Server-4.3.2-Setup.exe` from the GitHub release, or extract it from `Watchdog-TM-4.3.2.zip`. Run the installer as administrator, then open http://localhost:5081. Other devices on the local network use http://SERVER-IP:5081. A fresh installation prompts for an administrator password locally. Existing server installations retain their configuration, password, license and history.
 
 Keep the server powered and awake. Closing the browser does not stop monitoring. Configure verified RTU/TCP settings and temperature registers; live operation requires a signed TM license. The runtime contains public verification material only, never the supplier private key.
 
@@ -34,7 +34,7 @@ dotnet run --project tests/Watchdog.TM.Web.Tests -c Release -m:1
 
 The installer is written to `artifacts/`. `src/Watchdog.TM.Web` shares core models, storage, transport and license verification with `src/Watchdog.TM`. The WPF desktop source and its documentation are retained for legacy reference; the server installer is the current release. Supplier tool source is separate from the customer runtime. Tests create temporary signing keys in memory.
 
-See [server setup](docs/Server-setup.md) and [V4.3.1 release notes](docs/Release-4.3.1.md). The [V4.2.2 release notes](docs/Release-4.2.2.md) remain available.
+See [server setup](docs/Server-setup.md) and [V4.3.2 release notes](docs/Release-4.3.2.md). The [V4.3.1 release notes](docs/Release-4.3.1.md) remain available.
 
 ## Customer Help
 Open Main > Help to view or download the bundled PDF. Main > About shows version and installation details. The guide is packaged at src/Watchdog.TM.Web/wwwroot/help/Watchdog-TM-Help.pdf and also included in the release ZIP. Regenerate it on a Python environment with ReportLab using tools/documentation/build_help.py.
