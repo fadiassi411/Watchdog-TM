@@ -4,6 +4,7 @@ using System.Text.Json;
 using Watchdog.TM;
 
 public record PlcSnapshot(uint Sequence,DateTimeOffset At,int Status,int Interval,Dictionary<Guid,double?> Values,string Hash);
+public record PlcHistoryDownload(List<PlcSnapshot> Rows,int Skipped);
 public static class PlcHistory
 {
  public static void Validate(Controller c,Configuration config)
@@ -15,7 +16,7 @@ public static class PlcHistory
   Need(h.Capacity is 144 or 300,"Use 144 snapshots (24 hours) or the existing 300-snapshot layout (50 hours).");
   Need(h.SyncSeconds>=10&&h.SyncSeconds<=86400,"Use synchronization from 10 to 86400 seconds.");
   Need(h.HeaderAddress.HasValue&&(h.BufferAddress.HasValue||h.Segments.Count>0),"Verified header and buffer addresses are required.");
-  Need(h.HeaderWords>=5&&h.HeaderWords<=125&&h.RecordWords>=12&&h.RecordWords<=125,"Invalid header or record length.");
+  Need(h.HeaderWords>=5&&h.HeaderWords<=125&&h.RecordWords>=11&&h.RecordWords<=125,"Invalid header or record length.");
   Need(h.HeaderAddress+h.HeaderWords<=65536,"Header exceeds Modbus address range.");
   var segments=h.Segments.Count>0?h.Segments.OrderBy(x=>x.FirstRecord).ToList():new List<PlcHistorySegment>{new(){FirstRecord=0,RecordCount=h.Capacity,Address=h.BufferAddress!.Value}};
   int covered=0;foreach(var segment in segments){Need(segment.FirstRecord==covered&&segment.RecordCount>0&&segment.RecordCount<=h.Capacity,"Segments must cover all records without logical gaps or overlaps.");covered+=segment.RecordCount;Need(segment.Address+segment.RecordCount*h.RecordWords<=65536,"Buffer segment exceeds Modbus range.");Need(h.HeaderAddress+h.HeaderWords<=segment.Address||segment.Address+segment.RecordCount*h.RecordWords<=h.HeaderAddress,"Header overlaps a buffer segment.");}
@@ -30,14 +31,14 @@ public static class PlcHistory
   Need(h.Channels.All(x=>double.IsFinite(x.Multiplier)&&x.Multiplier!=0&&config.Sensors.Any(s=>s.Id==x.SensorId&&s.ControllerId==c.Id)),"History channels must reference this PLC's stable sensor IDs.");
  }
  static uint Sequence(ushort[] words,int offset,bool low)=>low?((uint)words[offset+1]<<16)|words[offset]:((uint)words[offset]<<16)|words[offset+1];
- public static async Task<List<PlcSnapshot>> Download(PlcHistoryLayout h,Func<ushort,ushort,Task<ushort[]>> read,CancellationToken ct)
+ public static async Task<PlcHistoryDownload> Download(PlcHistoryLayout h,Func<ushort,ushort,Task<ushort[]>> read,CancellationToken ct)
  {
   for(int attempt=0;attempt<3;attempt++)
   {
    ct.ThrowIfCancellationRequested();var head=await read(h.HeaderAddress!.Value,(ushort)h.HeaderWords);
    var newest=Sequence(head,h.SequenceOffset,h.LowWordFirst);var count=head[h.CountOffset];var position=head[h.PositionOffset];
    if(head[h.StatusOffset]!=h.HealthyStatus||count>h.Capacity||position>=h.Capacity||newest<count){await Task.Delay(50,ct);continue;}
-   var rows=new List<PlcSnapshot>();bool coherent=true;
+   var rows=new List<PlcSnapshot>();int skipped=0;
    for(int i=0;i<count;i++)
    {
     ct.ThrowIfCancellationRequested();var slot=(position-count+i+h.Capacity)%h.Capacity;
@@ -45,19 +46,21 @@ public static class PlcHistory
     int address=segment==null?h.BufferAddress!.Value+slot*h.RecordWords:segment.Address+(slot-segment.FirstRecord)*h.RecordWords;
     var w=await read((ushort)address,(ushort)h.RecordWords);
     var sequence=Sequence(w,h.RecordSequenceOffset,h.LowWordFirst);
-    if(sequence!=newest-count+1+i){coherent=false;break;}
+    // A power interruption or a previously erased slot must not make valid later
+    // snapshots unavailable. Only accept the exact sequence expected for this slot.
+    if(sequence!=newest-count+1+i){skipped++;continue;}
     var t=h.TimestampOffsets.Select(x=>(int)w[x]).ToArray();
     DateTimeOffset at;
-    try{at=new DateTimeOffset(t[0]+h.YearBase,t[1],t[2],t[3],t[4],t[5],TimeSpan.FromMinutes(h.UtcOffsetMinutes));}catch{throw new IOException("Invalid PLC timestamp; history was not imported.");}
-    if(w[h.IntervalOffset]!=600)throw new IOException("PLC snapshot interval must be 600 seconds.");
+    try{at=new DateTimeOffset(t[0]+h.YearBase,t[1],t[2],t[3],t[4],t[5],TimeSpan.FromMinutes(h.UtcOffsetMinutes));}catch{skipped++;continue;}
+    if(w[h.IntervalOffset]!=600){skipped++;continue;}
     var status=w[h.RecordStatusOffset];
     var values=h.Channels.ToDictionary(x=>x.SensorId,x=>status==h.HealthyStatus?(double?)((short)w[x.Offset]*x.Multiplier):null);
     rows.Add(new(sequence,at,status,600,values,Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(w)))));
    }
    var end=await read(h.HeaderAddress.Value,(ushort)h.HeaderWords);
-   if(coherent&&head.SequenceEqual(end))return rows;
+   if(head.SequenceEqual(end))return new(rows,skipped);
   }
-  throw new IOException("PLC buffer changed during download or is busy. Retrying later; no partial history imported.");
+  throw new IOException("PLC buffer changed during download or is busy. Retrying later; no history imported.");
  }
  public static int Import(Store store,Guid controller,List<PlcSnapshot> rows)
  {
@@ -65,14 +68,14 @@ public static class PlcHistory
   store.Write(db=>{
    using var q=db.CreateCommand();q.CommandText="SELECT MAX(sequence) FROM plc_snapshots WHERE controller=$id";q.Parameters.AddWithValue("$id",controller.ToString());var result=q.ExecuteScalar();long last=result is long n?n:0;
    if(rows[^1].Sequence<last)throw new IOException("PLC sequence moved backwards. Verify PLC reset/sequence retention before importing.");
-   long missing=rows[0].Sequence>last+1?rows[0].Sequence-last-1:0;
-   if(missing>0)Store.Run(db,"INSERT OR IGNORE INTO plc_gaps(controller,first_sequence,last_sequence,detected) VALUES($0,$1,$2,$3)",controller.ToString(),last+1,rows[0].Sequence-1,Store.Utc(DateTimeOffset.UtcNow));
+   long expected=last+1;
    foreach(var row in rows){
+    if(row.Sequence>expected)Store.Run(db,"INSERT OR IGNORE INTO plc_gaps(controller,first_sequence,last_sequence,detected) VALUES($0,$1,$2,$3)",controller.ToString(),expected,row.Sequence-1,Store.Utc(DateTimeOffset.UtcNow));
     q.CommandText="SELECT hash FROM plc_snapshots WHERE controller=$id AND sequence=$seq";q.Parameters.Clear();q.Parameters.AddWithValue("$id",controller.ToString());q.Parameters.AddWithValue("$seq",(long)row.Sequence);
-    if(q.ExecuteScalar() is string hash){if(hash!=row.Hash)throw new IOException("PLC reused a sequence with different data. Import stopped.");continue;}
+    if(q.ExecuteScalar() is string hash){if(hash!=row.Hash)throw new IOException("PLC reused a sequence with different data. Import stopped.");expected=Math.Max(expected,(long)row.Sequence+1);continue;}
     Store.Run(db,"INSERT INTO plc_snapshots(controller,sequence,at,hash,status,interval) VALUES($0,$1,$2,$3,$4,$5)",controller.ToString(),(long)row.Sequence,Store.Utc(row.At),row.Hash,row.Status,row.Interval);
     foreach(var value in row.Values)Store.Run(db,"INSERT INTO plc_history_values(controller,sequence,sensor,at,value,quality) VALUES($0,$1,$2,$3,$4,$5)",controller.ToString(),(long)row.Sequence,value.Key.ToString(),Store.Utc(row.At),value.Value,value.Value.HasValue?"VALID":"PLC STATUS "+row.Status);
-    inserted++;
+    inserted++;expected=Math.Max(expected,(long)row.Sequence+1);
    }
   });return inserted;
  }
@@ -101,9 +104,9 @@ public sealed class PlcHistoryWorker(ServerState server,Func<Controller,ushort,u
     if(c.Enabled&&c.History.Enabled&&!config.Settings.Simulation&&(DateTimeOffset.UtcNow>=due||recovered||manual.TryRemove(id,out _)))
     {
      PlcHistory.Validate(c,config);Progress[id]=new("Downloading","",Progress.GetValueOrDefault(id)?.LastSuccess,0);
-     var rows=await PlcHistory.Download(c.History,(a,n)=>reader!=null?reader(c,a,n,ct):server.Engine.Transport.Session(c,m=>m.ReadHoldingRegisters(c.UnitId,a,n),ct),ct);
+     var download=await PlcHistory.Download(c.History,(a,n)=>reader!=null?reader(c,a,n,ct):server.Engine.Transport.Session(c,m=>m.ReadHoldingRegisters(c.UnitId,a,n),ct),ct);
      // No configuration lock is held during network I/O. Reject results after edits/restores.
-     await server.Gate.WaitAsync(ct);try{if(!ReferenceEquals(config,server.Engine.Config))throw new IOException("Configuration changed; retrying history download.");var n=PlcHistory.Import(server.Store,id,rows);Progress[id]=new("Ready","",DateTimeOffset.UtcNow,n);}finally{server.Gate.Release();}
+     await server.Gate.WaitAsync(ct);try{if(!ReferenceEquals(config,server.Engine.Config))throw new IOException("Configuration changed; retrying history download.");var n=PlcHistory.Import(server.Store,id,download.Rows);var message=$"Imported {n} record(s)."+(download.Skipped>0?$" Skipped {download.Skipped} invalid/stale PLC slot(s).":"");Progress[id]=new("Ready",message,DateTimeOffset.UtcNow,n);}finally{server.Gate.Release();}
      due=DateTimeOffset.UtcNow.AddSeconds(c.History.SyncSeconds);
     }
    }catch(OperationCanceledException)when(ct.IsCancellationRequested){return;}
