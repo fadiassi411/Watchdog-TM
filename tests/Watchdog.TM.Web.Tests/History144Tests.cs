@@ -21,15 +21,15 @@ public static class History144Tests
   }
   DateTimeOffset At(uint sequence)=>new DateTimeOffset(2026,1,1,0,0,0,TimeSpan.Zero).AddMinutes(sequence*10);
   ushort[] Record(Controller c,uint seq){var w=new ushort[c.History.RecordWords];w[0]=(ushort)seq;w[1]=(ushort)(seq>>16);var t=At(seq);w[2]=(ushort)(t.Year-2000);w[3]=(ushort)t.Month;w[4]=(ushort)t.Day;w[5]=(ushort)t.Hour;w[6]=(ushort)t.Minute;w[7]=(ushort)t.Second;w[9]=600;foreach(var ch in c.History.Channels)w[ch.Offset]=unchecked((ushort)(short)-180);return w;}
-  Task<List<PlcSnapshot>> Fetch(Controller c,uint latest,int count,bool torn=false,int? badCount=null,int? badPosition=null)
+  async Task<List<PlcSnapshot>> Fetch(Controller c,uint latest,int count,bool torn=false,int? badCount=null,int? badPosition=null)
   {
-   int headerReads=0;return PlcHistory.Download(c.History,(address,length)=>{
+   int headerReads=0;return (await PlcHistory.Download(c.History,(address,length)=>{
     if(address==0){var seq=latest+(torn?(uint)headerReads++:0);return Task.FromResult(new ushort[]{(ushort)seq,(ushort)(seq>>16),(ushort)(badCount??count),(ushort)(badPosition??(int)(latest%144)),0});}
     var segment=c.History.Segments.FirstOrDefault(x=>address>=x.Address&&address<x.Address+x.RecordCount*c.History.RecordWords);
     int slot=segment==null?(address-100)/c.History.RecordWords:segment.FirstRecord+(address-segment.Address)/c.History.RecordWords;
     uint seqAt=Enumerable.Range(0,count).Select(i=>latest-(uint)count+1+(uint)i).Single(x=>(x-1)%144==slot);
     return Task.FromResult(Record(c,seqAt));
-   },CancellationToken.None);
+    },CancellationToken.None)).Rows;
   }
   var path=Path.Combine(Path.GetTempPath(),"tm-history144-"+Guid.NewGuid(),"watchdog.db");var store=new Store(path);store.Save(config,"test","144 fixture");new AlarmNotifications(store);
   foreach(var plc in config.Controllers)
