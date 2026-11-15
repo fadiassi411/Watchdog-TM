@@ -1,16 +1,16 @@
-name: Release V4.3.3
+name: Release V4.3.4
 
 on:
   workflow_dispatch:
   push:
     tags:
-      - v4.3.3
+      - v4.3.4
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-v4.3.3
+  group: release-v4.3.4
   cancel-in-progress: false
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v4.3.3
+          ref: v4.3.4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.401
@@ -50,7 +50,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $data = Join-Path $env:RUNNER_TEMP 'watchdog-release-smoke'
-          $proc = Start-Process ./server/Watchdog.TM.Web.exe -ArgumentList @('--urls','http://127.0.0.1:5184','--Storage:DataDirectory',$data,'--Monitoring:MutexName','WatchdogTMRelease433') -PassThru
+          $proc = Start-Process ./server/Watchdog.TM.Web.exe -ArgumentList @('--urls','http://127.0.0.1:5184','--Storage:DataDirectory',$data,'--Monitoring:MutexName','WatchdogTMRelease434') -PassThru
           try {
             $ready = $false
             for ($i = 0; $i -lt 30; $i++) {
@@ -63,32 +63,32 @@ jobs:
             if (!$session.setup -or $session.authenticated -or !$session.csrf) { throw 'Fresh session check failed' }
             $page = Invoke-WebRequest http://127.0.0.1:5184/
             $history = Invoke-WebRequest http://127.0.0.1:5184/plc-history.js
-            if ($history.Content -notmatch 'data-plc-test-header') { throw 'Release dashboard assets missing' }
+            if ($history.Content -notmatch 'data-plc-test-header' -or $history.Content -notmatch 'data-plc-migrate-offset') { throw 'Release dashboard assets missing' }
             $pdf = Invoke-WebRequest http://127.0.0.1:5184/help/Watchdog-TM-Help.pdf
             if ($pdf.StatusCode -ne 200) { throw 'Release PDF missing' }
           } finally { if (!$proc.HasExited) { Stop-Process -Id $proc.Id -Force } }
       - name: Package release assets
         run: |
           $ErrorActionPreference = 'Stop'
-          $stage = 'work/release-4.3.3'
+          $stage = 'work/release-4.3.4'
           New-Item -ItemType Directory -Force $stage | Out-Null
-          Copy-Item artifacts/Watchdog-TM-Server-4.3.3-Setup.exe $stage
+          Copy-Item artifacts/Watchdog-TM-Server-4.3.4-Setup.exe $stage
           Copy-Item server "$stage/server" -Recurse
-          Copy-Item docs/Release-4.3.3.md,docs/Alarm-management.md,docs/Server-setup.md $stage
+          Copy-Item docs/Release-4.3.4.md,docs/Alarm-management.md,docs/Server-setup.md $stage
           Copy-Item docs/Third-party-licenses "$stage/Third-party-licenses" -Recurse
-          Compress-Archive -Path "$stage/*" -DestinationPath artifacts/Watchdog-TM-4.3.3.zip
-          Get-FileHash artifacts/Watchdog-TM-Server-4.3.3-Setup.exe,artifacts/Watchdog-TM-4.3.3.zip -Algorithm SHA256 |
+          Compress-Archive -Path "$stage/*" -DestinationPath artifacts/Watchdog-TM-4.3.4.zip
+          Get-FileHash artifacts/Watchdog-TM-Server-4.3.4-Setup.exe,artifacts/Watchdog-TM-4.3.4.zip -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } |
             Set-Content artifacts/SHA256SUMS.txt
       - name: Retain verified build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Watchdog-TM-4.3.3
+          name: Watchdog-TM-4.3.4
           path: artifacts/*
           if-no-files-found: error
-      - name: Publish V4.3.3 release
+      - name: Publish V4.3.4 release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v4.3.3 artifacts/Watchdog-TM-Server-4.3.3-Setup.exe artifacts/Watchdog-TM-4.3.3.zip artifacts/SHA256SUMS.txt --verify-tag --title "Watchdog TM V4.3.3" --notes-file docs/Release-4.3.3.md --latest
-          if ($LASTEXITCODE -ne 0) { throw 'V4.3.3 release publication failed; V4.3.2 has not been modified' }
+          gh release create v4.3.4 artifacts/Watchdog-TM-Server-4.3.4-Setup.exe artifacts/Watchdog-TM-4.3.4.zip artifacts/SHA256SUMS.txt --verify-tag --title "Watchdog TM V4.3.4" --notes-file docs/Release-4.3.4.md --latest
+          if ($LASTEXITCODE -ne 0) { throw 'V4.3.4 release publication failed; V4.3.3 has not been modified' }

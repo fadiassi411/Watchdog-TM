@@ -1,12 +1,43 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Watchdog.TM;
 
 public record PlcSnapshot(uint Sequence,DateTimeOffset At,int Status,int Interval,Dictionary<Guid,double?> Values,string Hash);
 public record PlcHistoryDownload(List<PlcSnapshot> Rows,int Skipped);
 public static class PlcHistory
 {
+ public static int MigrateUtcOffset(SqliteConnection db,Guid controller,int oldOffsetMinutes,int newOffsetMinutes)
+ {
+  var delta=newOffsetMinutes-oldOffsetMinutes;
+  if(delta==0)return 0;
+  var snapshots=new List<(long Sequence,string At)>();
+  using(var q=db.CreateCommand())
+  {
+   q.CommandText="SELECT sequence,at FROM plc_snapshots WHERE controller=$id";q.Parameters.AddWithValue("$id",controller.ToString());
+   using var r=q.ExecuteReader();while(r.Read())snapshots.Add((r.GetInt64(0),r.GetString(1)));
+  }
+  using(var update=db.CreateCommand())
+  {
+   update.CommandText="UPDATE plc_snapshots SET at=$at WHERE controller=$id AND sequence=$sequence";
+   var at=update.Parameters.Add("$at",SqliteType.Text);var id=update.Parameters.Add("$id",SqliteType.Text);var sequence=update.Parameters.Add("$sequence",SqliteType.Integer);id.Value=controller.ToString();
+   foreach(var row in snapshots){at.Value=Store.Utc(DateTimeOffset.Parse(row.At).AddMinutes(delta));sequence.Value=row.Sequence;update.ExecuteNonQuery();}
+  }
+  var values=new List<(long RowId,string At)>();
+  using(var q=db.CreateCommand())
+  {
+   q.CommandText="SELECT rowid,at FROM plc_history_values WHERE controller=$id";q.Parameters.AddWithValue("$id",controller.ToString());
+   using var r=q.ExecuteReader();while(r.Read())values.Add((r.GetInt64(0),r.GetString(1)));
+  }
+  using(var update=db.CreateCommand())
+  {
+   update.CommandText="UPDATE plc_history_values SET at=$at WHERE rowid=$rowid";
+   var at=update.Parameters.Add("$at",SqliteType.Text);var rowid=update.Parameters.Add("$rowid",SqliteType.Integer);
+   foreach(var row in values){at.Value=Store.Utc(DateTimeOffset.Parse(row.At).AddMinutes(delta));rowid.Value=row.RowId;update.ExecuteNonQuery();}
+  }
+  return snapshots.Count;
+ }
  public static void Validate(Controller c,Configuration config)
  {
   var h=c.History;if(!h.Enabled)return;

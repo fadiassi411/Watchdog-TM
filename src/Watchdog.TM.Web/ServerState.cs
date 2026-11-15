@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Watchdog.TM;
 
 public sealed class ServerState : IHostedService
@@ -29,7 +30,7 @@ public sealed class ServerState : IHostedService
         Engine.ReadingObserved+=(sensor,reading)=>{try{Notifications.Observe(Engine.Config,sensor,reading);}catch{MailFault="Temperature alarm observation could not be saved. Check server storage.";}};
     }
     public Configuration Clone() => JsonSerializer.Deserialize<Configuration>(JsonSerializer.Serialize(Engine.Config))!;
-    public async Task Save(Configuration c,string action)
+    public async Task Save(Configuration c,string action,Action<SqliteConnection>? databaseMutation=null)
     {
         foreach(var controller in c.Controllers) PlcHistory.Validate(controller,c);
         Rules.Validate(c); Security.Capacity(c,Engine.Config);
@@ -37,9 +38,13 @@ public sealed class ServerState : IHostedService
         foreach(var sensor in c.Sensors) if(!Enum.IsDefined(sensor.TemperatureFunction)||!Enum.IsDefined(sensor.Format)||!Enum.IsDefined(sensor.Order)) throw new Exception("Choose valid temperature format options.");
         LiveMonitoring.Apply(c);
         Notifications.Ensure();
-        Store.Write(Store.EnsureHistory);
-
-        Store.Save(c,"Administrator",action);
+        Store.Write(db=>
+        {
+            Store.EnsureHistory(db);
+            databaseMutation?.Invoke(db);
+            Store.Run(db,"INSERT INTO config VALUES(1,$0) ON CONFLICT(id) DO UPDATE SET json=$0",JsonSerializer.Serialize(c));
+            Store.Audit(db,"Administrator",action);
+        });
         foreach(var old in Engine.Config.Sensors)
         {
             var next=c.Sensors.FirstOrDefault(x=>x.Id==old.Id);
