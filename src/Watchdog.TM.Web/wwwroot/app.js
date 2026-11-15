@@ -78,5 +78,5 @@ async function deleteEntry(controller,id){
  await refresh();error(result.message);
 }
 
-document.querySelector('footer span').textContent='Watchdog TM · V4.3.2 Web';
+document.querySelector('footer span').textContent='Watchdog TM · V4.3.3 Web';
 
