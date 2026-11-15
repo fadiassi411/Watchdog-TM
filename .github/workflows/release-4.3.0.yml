@@ -1,16 +1,16 @@
-name: Release V4.3.2
+name: Release V4.3.3
 
 on:
   workflow_dispatch:
   push:
     tags:
-      - v4.3.2
+      - v4.3.3
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-v4.3.2
+  group: release-v4.3.3
   cancel-in-progress: false
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v4.3.2
+          ref: v4.3.3
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.401
@@ -50,7 +50,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $data = Join-Path $env:RUNNER_TEMP 'watchdog-release-smoke'
-          $proc = Start-Process ./server/Watchdog.TM.Web.exe -ArgumentList @('--urls','http://127.0.0.1:5184','--Storage:DataDirectory',$data,'--Monitoring:MutexName','WatchdogTMRelease432') -PassThru
+          $proc = Start-Process ./server/Watchdog.TM.Web.exe -ArgumentList @('--urls','http://127.0.0.1:5184','--Storage:DataDirectory',$data,'--Monitoring:MutexName','WatchdogTMRelease433') -PassThru
           try {
             $ready = $false
             for ($i = 0; $i -lt 30; $i++) {
@@ -70,25 +70,25 @@ jobs:
       - name: Package release assets
         run: |
           $ErrorActionPreference = 'Stop'
-          $stage = 'work/release-4.3.2'
+          $stage = 'work/release-4.3.3'
           New-Item -ItemType Directory -Force $stage | Out-Null
-          Copy-Item artifacts/Watchdog-TM-Server-4.3.2-Setup.exe $stage
+          Copy-Item artifacts/Watchdog-TM-Server-4.3.3-Setup.exe $stage
           Copy-Item server "$stage/server" -Recurse
-          Copy-Item docs/Release-4.3.2.md,docs/Alarm-management.md,docs/Server-setup.md $stage
+          Copy-Item docs/Release-4.3.3.md,docs/Alarm-management.md,docs/Server-setup.md $stage
           Copy-Item docs/Third-party-licenses "$stage/Third-party-licenses" -Recurse
-          Compress-Archive -Path "$stage/*" -DestinationPath artifacts/Watchdog-TM-4.3.2.zip
-          Get-FileHash artifacts/Watchdog-TM-Server-4.3.2-Setup.exe,artifacts/Watchdog-TM-4.3.2.zip -Algorithm SHA256 |
+          Compress-Archive -Path "$stage/*" -DestinationPath artifacts/Watchdog-TM-4.3.3.zip
+          Get-FileHash artifacts/Watchdog-TM-Server-4.3.3-Setup.exe,artifacts/Watchdog-TM-4.3.3.zip -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLower())  $(Split-Path $_.Path -Leaf)" } |
             Set-Content artifacts/SHA256SUMS.txt
       - name: Retain verified build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Watchdog-TM-4.3.2
+          name: Watchdog-TM-4.3.3
           path: artifacts/*
           if-no-files-found: error
-      - name: Publish separate V4.3.2 release
+      - name: Publish V4.3.3 release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v4.3.2 artifacts/Watchdog-TM-Server-4.3.2-Setup.exe artifacts/Watchdog-TM-4.3.2.zip artifacts/SHA256SUMS.txt --verify-tag --title "Watchdog TM V4.3.2" --notes-file docs/Release-4.3.2.md --latest
-          if ($LASTEXITCODE -ne 0) { throw 'V4.3.2 release publication failed; V4.3.1 has not been modified' }
+          gh release create v4.3.3 artifacts/Watchdog-TM-Server-4.3.3-Setup.exe artifacts/Watchdog-TM-4.3.3.zip artifacts/SHA256SUMS.txt --verify-tag --title "Watchdog TM V4.3.3" --notes-file docs/Release-4.3.3.md --latest
+          if ($LASTEXITCODE -ne 0) { throw 'V4.3.3 release publication failed; V4.3.2 has not been modified' }
