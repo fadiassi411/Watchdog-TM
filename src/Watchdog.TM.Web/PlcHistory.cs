@@ -10,7 +10,10 @@ public static class PlcHistory
 {
  public static int MigrateUtcOffset(SqliteConnection db,Guid controller,int oldOffsetMinutes,int newOffsetMinutes)
  {
-  var delta=newOffsetMinutes-oldOffsetMinutes;
+  // The stored instant was calculated using the old UTC offset.  A PLC local
+  // time of 20:00 stored as UTC (old offset 0) must become 18:00 UTC when the
+  // correct offset is +120 minutes, so move persisted instants by old - new.
+  var delta=oldOffsetMinutes-newOffsetMinutes;
   if(delta==0)return 0;
   var snapshots=new List<(long Sequence,string At)>();
   using(var q=db.CreateCommand())
