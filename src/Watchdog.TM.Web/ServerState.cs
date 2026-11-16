@@ -11,6 +11,10 @@ public sealed class ServerState : IHostedService
     public PowerAvailability PowerAvailability { get; } = new();
     public string MailFault { get; set; } = "";
     public SemaphoreSlim Gate { get; } = new(1,1);
+    public const long MaximumRestoreBytes = 8L*1024*1024*1024;
+    // Automatic safety copies made before restore, deletion and timestamp corrections.
+    public const int SafetyBackupsKept = 10;
+    static readonly string[] SafetyBackupPrefixes = ["before-restore-","before-delete-","before-plc-history-offset-"];
     public string Revision { get; private set; } = Guid.NewGuid().ToString();
     public ServerState(IConfiguration config)
     {
@@ -61,7 +65,28 @@ public sealed class ServerState : IHostedService
         if(c.Settings.Simulation||!c.Settings.MailEnabled||!c.Settings.AutomaticAlerts) Notifications.Reset();
         Revision=Guid.NewGuid().ToString();
     }
+    // Keeps the newest SafetyBackupsKept files of each kind so the data folder cannot fill the disk.
+    // Daily backups in the configured backup folder and the installer migration backup are not touched.
+    public void PruneSafetyBackups()
+    {
+        foreach(var prefix in SafetyBackupPrefixes)
+        {
+            try
+            {
+                var old=new DirectoryInfo(DirectoryPath).EnumerateFiles(prefix+"*.db").OrderByDescending(x=>x.LastWriteTimeUtc).Skip(SafetyBackupsKept).ToArray();
+                foreach(var file in old) try{file.Delete();}catch(IOException){}catch(UnauthorizedAccessException){}
+            }
+            catch(IOException){}
+        }
+    }
     public Task StartAsync(CancellationToken ct) { Engine.Start(); PowerAvailability.Apply(Engine.Config.Settings.KeepComputerAwake && !Engine.Config.Settings.Simulation && Engine.Config.Controllers.Any(x=>x.Enabled) && Engine.Config.Sensors.Any(x=>x.Enabled&&!x.Retired)); return Task.CompletedTask; }
     public async Task StopAsync(CancellationToken ct) { PowerAvailability.Apply(false); await Engine.Stop(); }
+}
+
+public static class TemporaryFiles
+{
+    // The file is removed by Windows when the response stream closes, even if the download is cancelled.
+    public static FileStream OpenAndDelete(string path)=>new(path,FileMode.Open,FileAccess.Read,FileShare.Read|FileShare.Delete,81920,FileOptions.DeleteOnClose|FileOptions.SequentialScan);
+    public static void Delete(string path){try{if(File.Exists(path))File.Delete(path);}catch(IOException){}}
 }
 
