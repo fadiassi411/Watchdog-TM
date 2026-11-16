@@ -54,7 +54,7 @@ public static class Release436Tests
   Check(!File.Exists(temporary),"temporary download deleted after streaming");
 
   // Safety backups are limited per kind; unrelated files are never touched.
-  var data=Path.Combine(path,"server");var state=new ServerState(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?>{{"Storage:DataDirectory",data}}).Build());
+  var data=Path.Combine(path,"server");var state=new ServerState(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string>{{"Storage:DataDirectory",data}}).Build());
   for(int i=0;i<15;i++){var f=Path.Combine(data,$"before-delete-{i:00}.db");File.WriteAllText(f,"");File.SetLastWriteTimeUtc(f,DateTime.UtcNow.AddMinutes(i));}
   for(int i=0;i<3;i++)File.WriteAllText(Path.Combine(data,$"before-restore-{i}.db"),"");
   File.WriteAllText(Path.Combine(data,"before-web-migration-1.db"),"");
