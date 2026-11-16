@@ -22,7 +22,7 @@ public static class DeletionEndpoints
             var backup="before-delete-"+DateTime.UtcNow.ToString("yyyyMMdd-HHmmss")+"-"+Guid.NewGuid().ToString("N")+".db";
             for(var attempt=0;;attempt++)
             {
-                try { s.Store.Backup(Path.Combine(s.DirectoryPath,backup)); break; }
+                try { s.Store.Backup(Path.Combine(s.DirectoryPath,backup)); s.PruneSafetyBackups(); break; }
                 catch(Microsoft.Data.Sqlite.SqliteException ex) when(attempt<4 && ex.SqliteErrorCode is 5 or 6)
                 { await Task.Delay(100*(attempt+1)); }
             }

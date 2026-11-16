@@ -42,3 +42,4 @@ await SmtpTests.Run();
 await PlcHistoryTests.Run();
 await History144Tests.Run();
 await DeletionTests.Run();
+await Release436Tests.Run();

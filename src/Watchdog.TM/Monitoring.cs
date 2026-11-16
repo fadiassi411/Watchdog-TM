@@ -75,7 +75,9 @@ public sealed class MonitorEngine
     {
         get; set;
     }
-    public string OperationalFault { get; private set; } = "";
+    // Recording and backup faults are tracked separately so a successful backup cannot hide a recording fault.
+    string recordingFault = "", backupFault = "";
+    public string OperationalFault => string.Join(" ", new[] { recordingFault, backupFault }.Where(x => x.Length > 0));
     CancellationTokenSource? stop; Task[] tasks = []; readonly ConcurrentDictionary<Guid, DateTimeOffset> nextSample = new();
     public MonitorEngine(Configuration c, Store store)
     {
@@ -198,11 +200,12 @@ public sealed class MonitorEngine
     {
         while (!ct.IsCancellationRequested)
         {
+            bool scheduleFailed = false;
             foreach (var s in Config.Sensors.Where(x => !x.Retired))
             {
                 if (!Config.Settings.Simulation && Config.Controllers.Any(c=>c.Id==s.ControllerId && c.History.Enabled && c.History.Channels.Any(ch=>ch.SensorId==s.Id))) continue;
                 var now = DateTimeOffset.UtcNow;
-                DateTimeOffset due; try { due = nextSample.GetOrAdd(s.Id, _ => { var last = Store.LastSample(s.Id); return last?.AddSeconds(s.SampleSeconds) ?? now; }); } catch { OperationalFault = "RECORDING FAULT — cannot read sampling schedule. Retrying."; continue; }
+                DateTimeOffset due; try { due = nextSample.GetOrAdd(s.Id, _ => { var last = Store.LastSample(s.Id); return last?.AddSeconds(s.SampleSeconds) ?? now; }); } catch { scheduleFailed = true; recordingFault = "RECORDING FAULT — cannot read sampling schedule. Retrying."; continue; }
                 if (now < due)
                     continue;
                 var r = Display(s);
@@ -213,6 +216,8 @@ public sealed class MonitorEngine
                 }
                 catch { }
             }
+            if (!scheduleFailed)
+                recordingFault = "";
             await Task.Delay(500, ct);
         }
     }
@@ -238,9 +243,9 @@ public sealed class MonitorEngine
                             File.Delete(file);
                     }
                     last = today;
-                    OperationalFault = "";
+                    backupFault = "";
                 }
-                catch { OperationalFault = "BACKUP FAILED — check backup folder and available space."; }
+                catch { backupFault = "BACKUP FAILED — check backup folder and available space."; }
             }
             await Task.Delay(TimeSpan.FromSeconds(30), ct);
         }

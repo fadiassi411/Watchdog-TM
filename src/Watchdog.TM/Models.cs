@@ -237,6 +237,10 @@ public sealed class PlcHistoryLayout
  public int[] TimestampOffsets {get;set;}=[]; // year, month, day, hour, minute, second
  public int YearBase {get;set;}=2000;
  public int UtcOffsetMinutes {get;set;}
+ // Optional (V4.3.6): IANA or Windows time zone of the PLC clock, e.g. "Asia/Beirut".
+ // When set, PLC local timestamps follow that zone's daylight-saving rules and
+ // UtcOffsetMinutes is ignored. Blank keeps the fixed UtcOffsetMinutes behaviour.
+ public string TimeZoneId {get;set;}="";
  public bool LowWordFirst {get;set;}=true;
  public int HealthyStatus {get;set;}=0;
  public List<PlcHistoryChannel> Channels {get;set;}=[];

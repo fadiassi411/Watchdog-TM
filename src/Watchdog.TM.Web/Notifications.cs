@@ -108,6 +108,9 @@ public sealed class NotificationWorker(ServerState state):BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
-        while(!ct.IsCancellationRequested){await state.Gate.WaitAsync(ct);try{await state.Notifications.ProcessOne(state.Engine.Config,SmtpDelivery.Send,ct);}catch(OperationCanceledException)when(ct.IsCancellationRequested){return;}catch{state.MailFault="Email queue could not be processed. Check server storage and SMTP settings.";}finally{state.Gate.Release();}await Task.Delay(2000,ct);}
+        // V4.3.6: the configuration lock is not held during SMTP delivery (up to 15 s), so a slow or
+        // unreachable mail server no longer freezes the dashboard, settings or PLC history import.
+        // The configuration snapshot is immutable; edits replace it and cancel affected pending mail.
+        while(!ct.IsCancellationRequested){try{await state.Notifications.ProcessOne(state.Engine.Config,SmtpDelivery.Send,ct);}catch(OperationCanceledException)when(ct.IsCancellationRequested){return;}catch{state.MailFault="Email queue could not be processed. Check server storage and SMTP settings.";}await Task.Delay(2000,ct);}
     }
 }

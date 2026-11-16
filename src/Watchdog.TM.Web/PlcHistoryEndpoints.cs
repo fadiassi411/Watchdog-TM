@@ -1,16 +1,19 @@
 using System.Text;
 using System.Text.Json;
-using ClosedXML.Excel;
+using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
 using Watchdog.TM;
 public record HistoryMappingInput(string Revision,PlcHistoryLayout Layout);
-public record HistoryUtcOffsetMigrationInput(string Revision,int UtcOffsetMinutes);
+// TimeZoneId (V4.3.6): blank or missing keeps the fixed UTC offset; an IANA zone such as Asia/Beirut follows daylight saving.
+public record HistoryUtcOffsetMigrationInput(string Revision,int UtcOffsetMinutes,string? TimeZoneId=null);
 public static class PlcHistoryEndpoints
 {
  public static void MapPlcHistory(this RouteGroupBuilder api)
  {
   api.MapGet("/plc-history",(ServerState s,PlcHistoryWorker worker)=>Results.Ok(new{revision=s.Revision,controllers=s.Engine.Config.Controllers.Select(c=>new{c.Id,c.Name,c.History,progress=worker.Progress.GetValueOrDefault(c.Id)}),sensors=s.Engine.Config.Sensors.Select(x=>new{x.Id,x.Name,x.ControllerId}),gaps=Gaps(s.Store)}));
   api.MapPost("/plc-history/{id:guid}/mapping",async(Guid id,HistoryMappingInput input,ServerState s)=>{await s.Gate.WaitAsync();try{if(input.Revision!=s.Revision)return Results.Conflict(new{error="Configuration changed. Reload before saving."});var c=s.Clone();var controller=c.Controllers.SingleOrDefault(x=>x.Id==id);if(controller==null)return Results.NotFound();using(var db=s.Store.Open()){using var q=db.CreateCommand();q.CommandText="SELECT COUNT(*) FROM plc_snapshots WHERE controller=$id";q.Parameters.AddWithValue("$id",id.ToString());if(Convert.ToInt64(q.ExecuteScalar())>0){var old=JsonSerializer.SerializeToNode(controller.History)!;var next=JsonSerializer.SerializeToNode(input.Layout)!;foreach(var key in new[]{"Enabled","SyncSeconds","Verification"}){old.AsObject().Remove(key);next.AsObject().Remove(key);}if(old.ToJsonString()!=next.ToJsonString())return Results.BadRequest(new{error="This PLC already has imported history. Layout changes require a reviewed migration; existing sample identities must be preserved."});}}controller.History=input.Layout;PlcHistory.Validate(controller,c);await s.Save(c,"PLC history mapping updated");return Results.Ok();}catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}finally{s.Gate.Release();}});
-  api.MapPost("/plc-history/{id:guid}/migrate-utc-offset",async(Guid id,HistoryUtcOffsetMigrationInput input,ServerState s)=>{await s.Gate.WaitAsync();try{if(input.Revision!=s.Revision)return Results.Conflict(new{error="Configuration changed. Reload and retry."});if(input.UtcOffsetMinutes is < -840 or > 840)return Results.BadRequest(new{error="UTC offset must be between -840 and 840 minutes."});var c=s.Clone();var controller=c.Controllers.SingleOrDefault(x=>x.Id==id);if(controller==null)return Results.NotFound();if(!controller.History.Enabled)return Results.BadRequest(new{error="Enable and verify the PLC history layout first."});var old=controller.History.UtcOffsetMinutes;if(old==input.UtcOffsetMinutes)return Results.Ok(new{message="UTC offset is already set to that value.",updated=0});long count;using(var db=s.Store.Open()){using var q=db.CreateCommand();q.CommandText="SELECT COUNT(*) FROM plc_snapshots WHERE controller=$id";q.Parameters.AddWithValue("$id",id.ToString());count=Convert.ToInt64(q.ExecuteScalar());}if(count==0)return Results.BadRequest(new{error="No imported PLC history exists. Change utcOffsetMinutes in the layout and save it normally."});var backup=Path.Combine(s.DirectoryPath,$"before-plc-history-offset-{id:N}-{DateTime.UtcNow:yyyyMMddHHmmss}.db");s.Store.Backup(backup);controller.History.UtcOffsetMinutes=input.UtcOffsetMinutes;PlcHistory.Validate(controller,c);int updated=0;await s.Save(c,$"Migrated PLC history UTC offset from {old} to {input.UtcOffsetMinutes} minutes; preserved sequences; backup {Path.GetFileName(backup)}",db=>updated=PlcHistory.MigrateUtcOffset(db,id,old,input.UtcOffsetMinutes));return Results.Ok(new{message=$"Updated {updated} PLC snapshot timestamp(s). Backup created: {Path.GetFileName(backup)}.",updated,backup=Path.GetFileName(backup)});}catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}finally{s.Gate.Release();}});
+  api.MapPost("/plc-history/{id:guid}/migrate-utc-offset",async(Guid id,HistoryUtcOffsetMigrationInput input,ServerState s)=>{await s.Gate.WaitAsync();try{if(input.Revision!=s.Revision)return Results.Conflict(new{error="Configuration changed. Reload and retry."});if(input.UtcOffsetMinutes is < -840 or > 840)return Results.BadRequest(new{error="UTC offset must be between -840 and 840 minutes."});var c=s.Clone();var controller=c.Controllers.SingleOrDefault(x=>x.Id==id);if(controller==null)return Results.NotFound();if(!controller.History.Enabled)return Results.BadRequest(new{error="Enable and verify the PLC history layout first."});var oldClock=new PlcHistoryLayout{UtcOffsetMinutes=controller.History.UtcOffsetMinutes,TimeZoneId=controller.History.TimeZoneId??""};var newClock=new PlcHistoryLayout{UtcOffsetMinutes=input.UtcOffsetMinutes,TimeZoneId=input.TimeZoneId?.Trim()??""};if(!PlcClock.Valid(newClock.TimeZoneId))return Results.BadRequest(new{error="Unknown PLC time zone. Use an IANA name such as Asia/Beirut, or leave it blank for a fixed UTC offset."});string Describe(PlcHistoryLayout x)=>string.IsNullOrWhiteSpace(x.TimeZoneId)?$"UTC offset {x.UtcOffsetMinutes} minutes":$"time zone {x.TimeZoneId}";if(PlcClock.Same(oldClock,newClock)&&oldClock.UtcOffsetMinutes==newClock.UtcOffsetMinutes)return Results.Ok(new{message="The PLC clock is already set to that value.",updated=0});long count;using(var db=s.Store.Open()){using var q=db.CreateCommand();q.CommandText="SELECT COUNT(*) FROM plc_snapshots WHERE controller=$id";q.Parameters.AddWithValue("$id",id.ToString());count=Convert.ToInt64(q.ExecuteScalar());}if(count==0)return Results.BadRequest(new{error="No imported PLC history exists. Change utcOffsetMinutes or timeZoneId in the layout and save it normally."});var backup=Path.Combine(s.DirectoryPath,$"before-plc-history-offset-{id:N}-{DateTime.UtcNow:yyyyMMddHHmmss}.db");s.Store.Backup(backup);s.PruneSafetyBackups();controller.History.UtcOffsetMinutes=newClock.UtcOffsetMinutes;controller.History.TimeZoneId=newClock.TimeZoneId;PlcHistory.Validate(controller,c);int updated=0;await s.Save(c,$"Migrated PLC history clock from {Describe(oldClock)} to {Describe(newClock)}; preserved sequences; backup {Path.GetFileName(backup)}",db=>updated=PlcHistory.MigrateClock(db,id,oldClock,newClock));return Results.Ok(new{message=$"Updated {updated} PLC snapshot timestamp(s). Backup created: {Path.GetFileName(backup)}.",updated,backup=Path.GetFileName(backup)});}catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}finally{s.Gate.Release();}});
   api.MapPost("/plc-history/{id:guid}/download",(Guid id,ServerState s,PlcHistoryWorker worker)=>{var c=s.Engine.Config.Controllers.SingleOrDefault(x=>x.Id==id);if(c==null||!c.Enabled||!c.History.Enabled||s.Engine.Config.Settings.Simulation)return Results.BadRequest(new{error="Enable a verified history layout on a live controller first."});worker.Request(id);return Results.Ok(new{message="Download queued for this PLC."});});
   api.MapPost("/plc-history/{id:guid}/test-header",async(Guid id,ServerState s,CancellationToken ct)=>{var c=s.Engine.Config.Controllers.SingleOrDefault(x=>x.Id==id);if(c==null||!c.Enabled||!c.History.Enabled||s.Engine.Config.Settings.Simulation)return Results.BadRequest(new{error="Enable a verified history layout on a live controller first."});try{PlcHistory.Validate(c,s.Engine.Config);var address=c.History.HeaderAddress!.Value;var words=await s.Engine.Transport.Session(c,m=>m.ReadHoldingRegisters(c.UnitId,address,(ushort)c.History.HeaderWords),ct);return Results.Ok(new{address,words});}catch(Exception ex){return Results.BadRequest(new{error=$"History header read failed: {ex.GetBaseException().Message}"});}});
   api.MapGet("/stored-history",(Guid? controller,Guid? sensor,DateTimeOffset? from,DateTimeOffset? to,ServerState s)=>Results.Ok(Rows(s,controller,sensor,from,to).Take(2001).ToArray()));
@@ -23,15 +26,41 @@ public static class PlcHistoryEndpoints
     await writer.WriteLineAsync(string.Join(",",headers));
     foreach(var row in Rows(s,controller,sensor,from,to)){ctx.RequestAborted.ThrowIfCancellationRequested();await writer.WriteLineAsync(string.Join(",",Cells(row).Select(Csv)));}
    }else{
-    using var book=new XLWorkbook();int sheet=0,line=1;IXLWorksheet? ws=null;
-    foreach(var row in Rows(s,controller,sensor,from,to)){
-     ctx.RequestAborted.ThrowIfCancellationRequested();if(ws==null||line>1048576){ws=book.AddWorksheet("History "+(++sheet));for(int i=0;i<headers.Length;i++)ws.Cell(1,i+1).Value=headers[i];line=2;}
-     var cells=Cells(row);for(int i=0;i<cells.Length;i++)ws.Cell(line,i+1).Value=cells[i];if(row.Value.HasValue)ws.Cell(line,6).Value=row.Value.Value;line++;
-    }
-    if(ws==null){ws=book.AddWorksheet("History");for(int i=0;i<headers.Length;i++)ws.Cell(1,i+1).Value=headers[i];}
-    using var bytes=new MemoryStream();book.SaveAs(bytes);ctx.Response.ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";ctx.Response.Headers.ContentDisposition="attachment; filename=Watchdog-stored-history.xlsx";bytes.Position=0;await bytes.CopyToAsync(ctx.Response.Body,ctx.RequestAborted);
+    // V4.3.6: rows stream into a temporary workbook file instead of memory, so exports of years of history stay within RAM.
+    var path=Path.Combine(s.DirectoryPath,"export-"+Guid.NewGuid()+".xlsx");
+    try{await Task.Run(()=>WriteWorkbook(path,headers,Rows(s,controller,sensor,from,to),ctx.RequestAborted),ctx.RequestAborted);}catch{TemporaryFiles.Delete(path);throw;}
+    await using var file=TemporaryFiles.OpenAndDelete(path);
+    ctx.Response.ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";ctx.Response.Headers.ContentDisposition="attachment; filename=Watchdog-stored-history.xlsx";ctx.Response.ContentLength=file.Length;
+    await file.CopyToAsync(ctx.Response.Body,ctx.RequestAborted);
    }
   });
+ }
+ public static void WriteWorkbook(string path,string[] headers,IEnumerable<StoredHistory> rows,CancellationToken ct)
+ {
+  const int MaximumSheetRows=1048576;
+  using var document=SpreadsheetDocument.Create(path,SpreadsheetDocumentType.Workbook);
+  var workbook=document.AddWorkbookPart();var sheets=new List<string>();OpenXmlWriter? writer=null;int line=0;
+  static string Clean(string value)=>new(value.Where(System.Xml.XmlConvert.IsXmlChar).ToArray());
+  void Row(IEnumerable<object?> cells)
+  {
+   writer!.WriteStartElement(new Row());
+   foreach(var cell in cells)
+    if(cell is double number)writer.WriteElement(new Cell{DataType=CellValues.Number,CellValue=new CellValue(number)});
+    else writer.WriteElement(new Cell{DataType=CellValues.InlineString,InlineString=new InlineString(new Text(Clean(cell?.ToString()??"")){Space=SpaceProcessingModeValues.Preserve})});
+   writer.WriteEndElement();line++;
+  }
+  void Open(){var part=workbook.AddNewPart<WorksheetPart>();sheets.Add(workbook.GetIdOfPart(part));writer=OpenXmlWriter.Create(part);writer.WriteStartElement(new Worksheet());writer.WriteStartElement(new SheetData());line=0;Row(headers);}
+  void Close(){writer!.WriteEndElement();writer.WriteEndElement();writer.Close();writer.Dispose();}
+  foreach(var row in rows)
+  {
+   ct.ThrowIfCancellationRequested();
+   if(writer==null||line>=MaximumSheetRows){if(writer!=null)Close();Open();}
+   var cells=Cells(row).Cast<object?>().ToArray();if(row.Value.HasValue)cells[5]=row.Value.Value;Row(cells);
+  }
+  if(writer==null)Open();
+  Close();
+  workbook.Workbook=new Workbook(new Sheets(sheets.Select((id,i)=>new Sheet{Id=id,SheetId=(uint)(i+1),Name=sheets.Count==1&&line<=1?"History":"History "+(i+1)})));
+  workbook.Workbook.Save();
  }
  static string Csv(string s)=>"\""+((s.Length>0&&"=+-@\t\r".Contains(s[0])&&!double.TryParse(s,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out _))?"'"+s:s).Replace("\"","\"\"")+"\"";
  static string[] Cells(StoredHistory r)=>[r.Controller.ToString(),r.Plc,r.Sensor.ToString(),r.Name,r.At,r.Value?.ToString(System.Globalization.CultureInfo.InvariantCulture)??"",r.Quality,r.Sequence?.ToString()??"",r.Source];

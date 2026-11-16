@@ -8,36 +8,30 @@ public record PlcSnapshot(uint Sequence,DateTimeOffset At,int Status,int Interva
 public record PlcHistoryDownload(List<PlcSnapshot> Rows,int Skipped);
 public static class PlcHistory
 {
- public static int MigrateUtcOffset(SqliteConnection db,Guid controller,int oldOffsetMinutes,int newOffsetMinutes)
+ public static int MigrateUtcOffset(SqliteConnection db,Guid controller,int oldOffsetMinutes,int newOffsetMinutes)=>
+  MigrateClock(db,controller,new PlcHistoryLayout{UtcOffsetMinutes=oldOffsetMinutes},new PlcHistoryLayout{UtcOffsetMinutes=newOffsetMinutes});
+ // Reinterprets every stored PLC snapshot: stored UTC -> PLC local clock (old rule) -> UTC (new rule).
+ // Example: a PLC local time of 20:00 stored with offset 0 becomes 18:00 UTC with +120,
+ // or 17:00 UTC in summer when the time zone "Asia/Beirut" (UTC+3 daylight time) is used.
+ public static int MigrateClock(SqliteConnection db,Guid controller,PlcHistoryLayout oldClock,PlcHistoryLayout newClock)
  {
-  // The stored instant was calculated using the old UTC offset.  A PLC local
-  // time of 20:00 stored as UTC (old offset 0) must become 18:00 UTC when the
-  // correct offset is +120 minutes, so move persisted instants by old - new.
-  var delta=oldOffsetMinutes-newOffsetMinutes;
-  if(delta==0)return 0;
+  if(PlcClock.Same(oldClock,newClock))return 0;
   var snapshots=new List<(long Sequence,string At)>();
   using(var q=db.CreateCommand())
   {
-   q.CommandText="SELECT sequence,at FROM plc_snapshots WHERE controller=$id";q.Parameters.AddWithValue("$id",controller.ToString());
+   q.CommandText="SELECT sequence,at FROM plc_snapshots WHERE controller=$id ORDER BY sequence";q.Parameters.AddWithValue("$id",controller.ToString());
    using var r=q.ExecuteReader();while(r.Read())snapshots.Add((r.GetInt64(0),r.GetString(1)));
   }
-  using(var update=db.CreateCommand())
+  using var snapshot=db.CreateCommand();using var values=db.CreateCommand();
+  snapshot.CommandText="UPDATE plc_snapshots SET at=$at WHERE controller=$id AND sequence=$sequence";
+  values.CommandText="UPDATE plc_history_values SET at=$at WHERE controller=$id AND sequence=$sequence";
+  foreach(var command in new[]{snapshot,values}){command.Parameters.Add("$at",SqliteType.Text);command.Parameters.Add("$id",SqliteType.Text).Value=controller.ToString();command.Parameters.Add("$sequence",SqliteType.Integer);}
+  DateTimeOffset? previous=null;
+  foreach(var row in snapshots)
   {
-   update.CommandText="UPDATE plc_snapshots SET at=$at WHERE controller=$id AND sequence=$sequence";
-   var at=update.Parameters.Add("$at",SqliteType.Text);var id=update.Parameters.Add("$id",SqliteType.Text);var sequence=update.Parameters.Add("$sequence",SqliteType.Integer);id.Value=controller.ToString();
-   foreach(var row in snapshots){at.Value=Store.Utc(DateTimeOffset.Parse(row.At).AddMinutes(delta));sequence.Value=row.Sequence;update.ExecuteNonQuery();}
-  }
-  var values=new List<(long RowId,string At)>();
-  using(var q=db.CreateCommand())
-  {
-   q.CommandText="SELECT rowid,at FROM plc_history_values WHERE controller=$id";q.Parameters.AddWithValue("$id",controller.ToString());
-   using var r=q.ExecuteReader();while(r.Read())values.Add((r.GetInt64(0),r.GetString(1)));
-  }
-  using(var update=db.CreateCommand())
-  {
-   update.CommandText="UPDATE plc_history_values SET at=$at WHERE rowid=$rowid";
-   var at=update.Parameters.Add("$at",SqliteType.Text);var rowid=update.Parameters.Add("$rowid",SqliteType.Integer);
-   foreach(var row in values){at.Value=Store.Utc(DateTimeOffset.Parse(row.At).AddMinutes(delta));rowid.Value=row.RowId;update.ExecuteNonQuery();}
+   var local=PlcClock.ToLocal(DateTimeOffset.Parse(row.At),oldClock);
+   var at=PlcClock.ToUtc(local,newClock,previous);previous=at;
+   foreach(var command in new[]{snapshot,values}){command.Parameters["$at"].Value=Store.Utc(at);command.Parameters["$sequence"].Value=row.Sequence;command.ExecuteNonQuery();}
   }
   return snapshots.Count;
  }
@@ -59,6 +53,7 @@ public static class PlcHistory
   var header=new[]{h.SequenceOffset,h.SequenceOffset+1,h.CountOffset,h.PositionOffset,h.StatusOffset};
   Need(header.All(x=>x>=0&&x<h.HeaderWords)&&header.Distinct().Count()==header.Length,"Header field offsets are invalid or overlap.");
   Need(h.TimestampOffsets.Length==6&&h.UtcOffsetMinutes>=-840&&h.UtcOffsetMinutes<=840&&(h.YearBase==0||h.YearBase==2000),"Specify six timestamp fields, year base and UTC offset.");
+  Need(PlcClock.Valid(h.TimeZoneId),"Unknown PLC time zone. Use an IANA name such as Asia/Beirut, or leave it blank to use the fixed UTC offset.");
   var fields=new[]{h.RecordSequenceOffset,h.RecordSequenceOffset+1,h.RecordStatusOffset,h.IntervalOffset}.Concat(h.TimestampOffsets).Concat(h.Channels.Select(x=>x.Offset)).ToArray();
   Need(fields.All(x=>x>=0&&x<h.RecordWords)&&fields.Distinct().Count()==fields.Length,"Record fields overlap or exceed record size.");
   Need(h.Channels.Count>0&&h.Channels.Count<=18&&h.Channels.Select(x=>x.SensorId).Distinct().Count()==h.Channels.Count,"Map each sensor exactly once.");
@@ -72,7 +67,7 @@ public static class PlcHistory
    ct.ThrowIfCancellationRequested();var head=await read(h.HeaderAddress!.Value,(ushort)h.HeaderWords);
    var newest=Sequence(head,h.SequenceOffset,h.LowWordFirst);var count=head[h.CountOffset];var position=head[h.PositionOffset];
    if(head[h.StatusOffset]!=h.HealthyStatus||count>h.Capacity||position>=h.Capacity||newest<count){await Task.Delay(50,ct);continue;}
-   var rows=new List<PlcSnapshot>();int skipped=0;
+   var rows=new List<PlcSnapshot>();int skipped=0;DateTimeOffset? previous=null;
    for(int i=0;i<count;i++)
    {
     ct.ThrowIfCancellationRequested();var slot=(position-count+i+h.Capacity)%h.Capacity;
@@ -85,11 +80,11 @@ public static class PlcHistory
     if(sequence!=newest-count+1+i){skipped++;continue;}
     var t=h.TimestampOffsets.Select(x=>(int)w[x]).ToArray();
     DateTimeOffset at;
-    try{at=new DateTimeOffset(t[0]+h.YearBase,t[1],t[2],t[3],t[4],t[5],TimeSpan.FromMinutes(h.UtcOffsetMinutes));}catch{skipped++;continue;}
+    try{at=PlcClock.ToUtc(new DateTime(t[0]+h.YearBase,t[1],t[2],t[3],t[4],t[5],DateTimeKind.Unspecified),h,previous);}catch{skipped++;continue;}
     if(w[h.IntervalOffset]!=600){skipped++;continue;}
     var status=w[h.RecordStatusOffset];
     var values=h.Channels.ToDictionary(x=>x.SensorId,x=>status==h.HealthyStatus?(double?)((short)w[x.Offset]*x.Multiplier):null);
-    rows.Add(new(sequence,at,status,600,values,Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(w)))));
+    previous=at;rows.Add(new(sequence,at,status,600,values,Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(w)))));
    }
    var end=await read(h.HeaderAddress.Value,(ushort)h.HeaderWords);
    if(head.SequenceEqual(end))return new(rows,skipped);
@@ -114,6 +109,33 @@ public static class PlcHistory
   });return inserted;
  }
 }
+// Converts PLC wall-clock timestamps. A fixed UTC offset suits PLC clocks that never change
+// for daylight saving; a time zone suits PLC clocks that follow local summer time.
+public static class PlcClock
+{
+ public static bool Valid(string? id){if(string.IsNullOrWhiteSpace(id))return true;try{TimeZoneInfo.FindSystemTimeZoneById(id.Trim());return true;}catch{return false;}}
+ static TimeZoneInfo? Zone(PlcHistoryLayout h)=>string.IsNullOrWhiteSpace(h.TimeZoneId)?null:TimeZoneInfo.FindSystemTimeZoneById(h.TimeZoneId.Trim());
+ public static bool Same(PlcHistoryLayout a,PlcHistoryLayout b)=>string.IsNullOrWhiteSpace(a.TimeZoneId)&&string.IsNullOrWhiteSpace(b.TimeZoneId)?a.UtcOffsetMinutes==b.UtcOffsetMinutes:string.Equals(a.TimeZoneId?.Trim(),b.TimeZoneId?.Trim(),StringComparison.OrdinalIgnoreCase);
+ public static DateTime ToLocal(DateTimeOffset utc,PlcHistoryLayout h)
+ {
+  var zone=Zone(h);
+  return DateTime.SpecifyKind(zone==null?utc.UtcDateTime.AddMinutes(h.UtcOffsetMinutes):TimeZoneInfo.ConvertTimeFromUtc(utc.UtcDateTime,zone),DateTimeKind.Unspecified);
+ }
+ // previous: UTC time of the preceding PLC record, used to resolve the repeated hour when clocks go back.
+ public static DateTimeOffset ToUtc(DateTime local,PlcHistoryLayout h,DateTimeOffset? previous=null)
+ {
+  local=DateTime.SpecifyKind(local,DateTimeKind.Unspecified);
+  var zone=Zone(h);
+  if(zone==null)return new DateTimeOffset(local,TimeSpan.FromMinutes(h.UtcOffsetMinutes)).ToUniversalTime();
+  if(zone.IsInvalidTime(local))return new DateTimeOffset(local,zone.BaseUtcOffset).ToUniversalTime(); // skipped hour: PLC clock had not moved forward yet
+  if(zone.IsAmbiguousTime(local))
+  {
+   var candidates=zone.GetAmbiguousTimeOffsets(local).Select(o=>new DateTimeOffset(local,o).ToUniversalTime()).OrderBy(x=>x).ToArray();
+   return previous is {} p?candidates.FirstOrDefault(x=>x>p,candidates[^1]):candidates[0];
+  }
+  return new DateTimeOffset(local,zone.GetUtcOffset(local)).ToUniversalTime();
+ }
+}
 public record HistoryProgress(string Status,string Error,DateTimeOffset? LastSuccess,int Imported);
 public sealed class PlcHistoryWorker(ServerState server,Func<Controller,ushort,ushort,CancellationToken,Task<ushort[]>>? reader=null):BackgroundService
 {
@@ -123,7 +145,7 @@ public sealed class PlcHistoryWorker(ServerState server,Func<Controller,ushort,u
  protected override async Task ExecuteAsync(CancellationToken ct)
  {
   var tasks=new Dictionary<Guid,Task>();
-  try{while(!ct.IsCancellationRequested){foreach(var c in server.Engine.Config.Controllers)if(!tasks.ContainsKey(c.Id))tasks[c.Id]=Task.Run(()=>Loop(c.Id,ct),ct);await Task.Delay(1000,ct);}}
+  try{while(!ct.IsCancellationRequested){foreach(var c in server.Engine.Config.Controllers)if(!tasks.TryGetValue(c.Id,out var running)||running.IsCompleted)tasks[c.Id]=Task.Run(()=>Loop(c.Id,ct),ct);await Task.Delay(1000,ct);}}
   finally{await Task.WhenAll(tasks.Values);}
  }
  async Task Loop(Guid id,CancellationToken ct)
