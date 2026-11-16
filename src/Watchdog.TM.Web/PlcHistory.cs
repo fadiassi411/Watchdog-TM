@@ -35,13 +35,23 @@ public static class PlcHistory
   }
   return snapshots.Count;
  }
+ // Fields that only say WHERE records are stored in the PLC. Moving the buffer (for example into the
+ // DVP retained area) keeps every record's sequence and content, so imported history stays valid.
+ static readonly string[] StorageOnlyFields=["Enabled","SyncSeconds","Verification","Capacity","BufferAddress","Segments"];
+ // True when two layouts decode records identically: same header and record fields, clock and channels.
+ public static bool SameRecordFormat(PlcHistoryLayout current,PlcHistoryLayout next)
+ {
+  var a=System.Text.Json.JsonSerializer.SerializeToNode(current)!.AsObject();var b=System.Text.Json.JsonSerializer.SerializeToNode(next)!.AsObject();
+  foreach(var key in StorageOnlyFields){a.Remove(key);b.Remove(key);}
+  return a.ToJsonString()==b.ToJsonString();
+ }
  public static void Validate(Controller c,Configuration config)
  {
   var h=c.History;if(!h.Enabled)return;
   void Need(bool ok,string message){if(!ok)throw new ArgumentException(message);}
   Need(c.Protocol!=Protocol.Simulation,"History requires a real PLC.");
   Need(!string.IsNullOrWhiteSpace(h.Verification),"Enter the verified PLC project/layout reference.");
-  Need(h.Capacity is 144 or 300,"Use 144 snapshots (24 hours) or the existing 300-snapshot layout (50 hours).");
+  Need(h.Capacity is 111 or 144 or 300,"Use 144 snapshots (24 hours), 111 snapshots (retained DVP buffer, about 18.5 hours) or the existing 300-snapshot layout (50 hours).");
   Need(h.SyncSeconds>=10&&h.SyncSeconds<=86400,"Use synchronization from 10 to 86400 seconds.");
   Need(h.HeaderAddress.HasValue&&(h.BufferAddress.HasValue||h.Segments.Count>0),"Verified header and buffer addresses are required.");
   Need(h.HeaderWords>=5&&h.HeaderWords<=125&&h.RecordWords>=11&&h.RecordWords<=125,"Invalid header or record length.");

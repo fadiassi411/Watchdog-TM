@@ -1,10 +1,10 @@
-# Watchdog TM V4.3.6
+# Watchdog TM V4.3.8
 
 Windows x64 temperature monitoring server from MicroBrain. The self-contained ASP.NET Core application runs as the WatchdogTM Windows Service and is accessed through a browser on the local network.
 
 ## Install
 
-Download `Watchdog-TM-Server-4.3.6-Setup.exe` from the GitHub release, or extract it from `Watchdog-TM-4.3.6.zip`. Run the installer as administrator, then open http://localhost:5081. Other devices on the local network use http://SERVER-IP:5081. A fresh installation prompts for an administrator password locally. Existing server installations retain their configuration, password, license and history.
+Download `Watchdog-TM-Server-4.3.8-Setup.exe` from the GitHub release, or extract it from `Watchdog-TM-4.3.8.zip`. Run the installer as administrator, then open http://localhost:5081. Other devices on the local network use http://SERVER-IP:5081. A fresh installation prompts for an administrator password locally. Existing server installations retain their configuration, password, license and history.
 
 Keep the server powered and awake. Closing the browser does not stop monitoring. Configure verified RTU/TCP settings and temperature registers; live operation requires a signed TM license. The runtime contains public verification material only, never the supplier private key.
 
@@ -34,7 +34,7 @@ dotnet run --project tests/Watchdog.TM.Web.Tests -c Release -m:1
 
 The installer is written to `artifacts/`. `src/Watchdog.TM.Web` shares core models, storage, transport and license verification with `src/Watchdog.TM`. The WPF desktop source and its documentation are retained for legacy reference; the server installer is the current release. Supplier tool source is separate from the customer runtime. Tests create temporary signing keys in memory.
 
-See [server setup](docs/Server-setup.md) and [V4.3.6 release notes](docs/Release-4.3.6.md). Earlier release notes remain available in `docs/`, and every earlier installer stays on the GitHub Releases page; see [rollback](docs/Rollback.md) to return to V4.3.5, V4.3.4 or older.
+See [server setup](docs/Server-setup.md) and [V4.3.8 release notes](docs/Release-4.3.8.md). Earlier release notes remain available in `docs/`, and every earlier installer stays on the GitHub Releases page; see [rollback](docs/Rollback.md) to return to V4.3.7, V4.3.6, V4.3.5, V4.3.4 or older.
 
 ## Customer Help
 Open Main > Help to view or download the bundled PDF. Main > About shows version and installation details. The guide is packaged at src/Watchdog.TM.Web/wwwroot/help/Watchdog-TM-Help.pdf and also included in the release ZIP. Regenerate it on a Python environment with ReportLab using tools/documentation/build_help.py.
