@@ -13,7 +13,17 @@ public static class PlcHistoryTemplates
  // header D4900 = status, D4901-D4902 = 32-bit sequence (low word first), D4903 = count, D4904 = next slot;
  // 144 records of 17 words from D5000: +0/+1 sequence, +2 status, +3 interval (600),
  // +4..+9 year, month, day, hour, minute, second (TRD), +10..+16 temperatures copied from D100..D106.
- public const int FirstValueRegister=100, Channels=7, HeaderRegister=4900, BufferRegister=5000;
+ public const int FirstValueRegister=100, Channels=7, HeaderRegister=4900, BufferRegister=5000, RecordWords=17;
+ // V4.3.8: the DVP12SE only retains D408-D599 and D2000-D3919 through power loss and STOP->RUN, which cannot
+ // hold 144 records. The retained variant stores 111 records at D2000-D3886; D3900-D3904 keep sequence/count/slot.
+ public const string Buffer144="buffer144", Retained111="retained111";
+ public const int RetainedBufferRegister=2000, RetainedCapacity=111;
+ public static Proposal Standard(Configuration config,Guid controllerId,int yearBase,string variant)=>variant switch
+ {
+  Buffer144=>StandardDvp144(config,controllerId,yearBase),
+  Retained111=>Build(config,controllerId,yearBase,RetainedBufferRegister,RetainedCapacity,$"MicroBrain retained DVP History_Record: {RetainedCapacity} x {RecordWords} words, header D4900, buffer D2000-D3886 (retained), values D100-D106 (template V4.3.8)"),
+  _=>throw new ArgumentException("Choose the PLC program version: buffer D5000 (144 records) or retained buffer D2000 (111 records).")
+ };
 
  // Delta DVP Modbus addressing: D0-D4095 at 0x1000 + n, D4096 and above at 0x9000 + (n - 4096).
  public static ushort DvpD(int register)=>register switch
@@ -29,7 +39,9 @@ public static class PlcHistoryTemplates
   _=>null
  };
 
- public static Proposal StandardDvp144(Configuration config,Guid controllerId,int yearBase)
+ public static Proposal StandardDvp144(Configuration config,Guid controllerId,int yearBase)=>
+  Build(config,controllerId,yearBase,BufferRegister,144,"MicroBrain standard DVP History_Record: 144 x 17 words, header D4900, buffer D5000, values D100-D106 (template V4.3.7)");
+ static Proposal Build(Configuration config,Guid controllerId,int yearBase,int bufferRegister,int capacity,string verification)
  {
   if(yearBase is not (0 or 2000))throw new ArgumentException("Choose the PLC year format: 4-digit (year base 0) or 2-digit (year base 2000).");
   var controller=config.Controllers.FirstOrDefault(x=>x.Id==controllerId)??throw new ArgumentException("Controller not found.");
@@ -50,10 +62,10 @@ public static class PlcHistoryTemplates
   var layout=new PlcHistoryLayout
   {
    Enabled=true,
-   Verification="MicroBrain standard DVP History_Record: 144 x 17 words, header D4900, buffer D5000, values D100-D106 (template V4.3.7)",
-   Capacity=144,SyncSeconds=existing.SyncSeconds is >=10 and <=86400?existing.SyncSeconds:600,
+   Verification=verification,
+   Capacity=capacity,SyncSeconds=existing.SyncSeconds is >=10 and <=86400?existing.SyncSeconds:600,
    HeaderAddress=DvpD(HeaderRegister),HeaderWords=5,StatusOffset=0,SequenceOffset=1,CountOffset=3,PositionOffset=4,
-   BufferAddress=DvpD(BufferRegister),Segments=[],RecordWords=17,
+   BufferAddress=DvpD(bufferRegister),Segments=[],RecordWords=RecordWords,
    RecordSequenceOffset=0,RecordStatusOffset=2,IntervalOffset=3,TimestampOffsets=[4,5,6,7,8,9],
    YearBase=yearBase,
    // A new layout assumes the PLC clock is set to Lebanon winter time all year (DVP clocks do not change for summer time).
@@ -63,7 +75,8 @@ public static class PlcHistoryTemplates
   };
   PlcHistory.Validate(new Controller{Id=controller.Id,Protocol=controller.Protocol,History=layout},config);
   var clock=string.IsNullOrWhiteSpace(layout.TimeZoneId)?$"fixed UTC offset {(layout.UtcOffsetMinutes>=0?"+":"")}{layout.UtcOffsetMinutes} minutes":$"time zone {layout.TimeZoneId}";
-  var message=$"Standard layout loaded with {mapped.Count} of {Channels} channels"+(skipped.Count>0?$"; {skipped.Count} sensor(s) not mapped":"")+$". Clock: {clock}. Review it, use Test PLC History Header, then select Save history layout.";
+  var hours=capacity/6.0;
+  var message=$"{capacity}-record layout (about {hours:0.#} hours, buffer D{bufferRegister}) loaded with {mapped.Count} of {Channels} channels"+(skipped.Count>0?$"; {skipped.Count} sensor(s) not mapped":"")+$". Clock: {clock}. Review it, use Test PLC History Header, then select Save history layout.";
   return new(layout,mapped.ToArray(),skipped.ToArray(),message);
  }
 }
