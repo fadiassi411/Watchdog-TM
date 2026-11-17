@@ -65,7 +65,7 @@ jobs:
             $page = Invoke-WebRequest http://127.0.0.1:5184/
             if ($page.Content -notmatch 'V4\.3\.9') { throw 'Release page does not show V4.3.9' }
             $history = Invoke-WebRequest http://127.0.0.1:5184/plc-history.js
-            if ($history.Content -notmatch 'data-plc-test-header' -or $history.Content -notmatch 'data-plc-migrate-offset' -or $history.Content -notmatch 'time-zone-' -or $history.Content -notmatch 'data-plc-template' -or $history.Content -notmatch 'retained111' -or $history.Content -notmatch 'retained144single') { throw 'Release dashboard assets missing' }
+            if ($history.Content -notmatch 'data-plc-test-header' -or $history.Content -notmatch 'data-plc-migrate-offset' -or $history.Content -notmatch 'time-zone-' -or $history.Content -notmatch 'data-plc-template' -or $history.Content -notmatch 'value="retained"' -or $history.Content -notmatch 'confirmFormatChange') { throw 'Release dashboard assets missing' }
             $pdf = Invoke-WebRequest http://127.0.0.1:5184/help/Watchdog-TM-Help.pdf
             if ($pdf.StatusCode -ne 200) { throw 'Release PDF missing' }
           } finally { if (!$proc.HasExited) { Stop-Process -Id $proc.Id -Force } }
