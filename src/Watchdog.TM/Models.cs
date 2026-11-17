@@ -241,6 +241,9 @@ public sealed class PlcHistoryLayout
  // When set, PLC local timestamps follow that zone's daylight-saving rules and
  // UtcOffsetMinutes is ignored. Blank keeps the fixed UtcOffsetMinutes behaviour.
  public string TimeZoneId {get;set;}="";
+ // V4.3.9: set by the server when the record format changes after history was imported. Records with a
+ // sequence at or below this value were already imported in the previous format and are never re-read.
+ public long ImportAfterSequence {get;set;}
  public bool LowWordFirst {get;set;}=true;
  public int HealthyStatus {get;set;}=0;
  public List<PlcHistoryChannel> Channels {get;set;}=[];
