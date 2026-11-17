@@ -4,7 +4,7 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using Watchdog.TM;
-public record HistoryMappingInput(string Revision,PlcHistoryLayout Layout);
+public record HistoryMappingInput(string Revision,PlcHistoryLayout Layout,bool ConfirmFormatChange=false);
 // TimeZoneId (V4.3.6): blank or missing keeps the fixed UTC offset; an IANA zone such as Asia/Beirut follows daylight saving.
 public record HistoryUtcOffsetMigrationInput(string Revision,int UtcOffsetMinutes,string? TimeZoneId=null);
 public static class PlcHistoryEndpoints
@@ -12,7 +12,7 @@ public static class PlcHistoryEndpoints
  public static void MapPlcHistory(this RouteGroupBuilder api)
  {
   api.MapGet("/plc-history",(ServerState s,PlcHistoryWorker worker)=>Results.Ok(new{revision=s.Revision,controllers=s.Engine.Config.Controllers.Select(c=>new{c.Id,c.Name,c.History,progress=worker.Progress.GetValueOrDefault(c.Id)}),sensors=s.Engine.Config.Sensors.Select(x=>new{x.Id,x.Name,x.ControllerId}),gaps=Gaps(s.Store)}));
-  api.MapPost("/plc-history/{id:guid}/mapping",async(Guid id,HistoryMappingInput input,ServerState s)=>{await s.Gate.WaitAsync();try{if(input.Revision!=s.Revision)return Results.Conflict(new{error="Configuration changed. Reload before saving."});var c=s.Clone();var controller=c.Controllers.SingleOrDefault(x=>x.Id==id);if(controller==null)return Results.NotFound();using(var db=s.Store.Open()){using var q=db.CreateCommand();q.CommandText="SELECT COUNT(*) FROM plc_snapshots WHERE controller=$id";q.Parameters.AddWithValue("$id",id.ToString());if(Convert.ToInt64(q.ExecuteScalar())>0&&!PlcHistory.SameRecordFormat(controller.History,input.Layout))return Results.BadRequest(new{error="This PLC already has imported history. Only the buffer location and size (capacity, bufferAddress, segments) can change; record fields, channels and clock settings must stay the same so existing samples keep their identity."});}controller.History=input.Layout;PlcHistory.Validate(controller,c);await s.Save(c,"PLC history mapping updated");return Results.Ok();}catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}finally{s.Gate.Release();}});
+  api.MapPost("/plc-history/{id:guid}/mapping",(Guid id,HistoryMappingInput input,ServerState s)=>SaveMapping(s,id,input));
   api.MapPost("/plc-history/{id:guid}/migrate-utc-offset",async(Guid id,HistoryUtcOffsetMigrationInput input,ServerState s)=>{await s.Gate.WaitAsync();try{if(input.Revision!=s.Revision)return Results.Conflict(new{error="Configuration changed. Reload and retry."});if(input.UtcOffsetMinutes is < -840 or > 840)return Results.BadRequest(new{error="UTC offset must be between -840 and 840 minutes."});var c=s.Clone();var controller=c.Controllers.SingleOrDefault(x=>x.Id==id);if(controller==null)return Results.NotFound();if(!controller.History.Enabled)return Results.BadRequest(new{error="Enable and verify the PLC history layout first."});var oldClock=new PlcHistoryLayout{UtcOffsetMinutes=controller.History.UtcOffsetMinutes,TimeZoneId=controller.History.TimeZoneId??""};var newClock=new PlcHistoryLayout{UtcOffsetMinutes=input.UtcOffsetMinutes,TimeZoneId=input.TimeZoneId?.Trim()??""};if(!PlcClock.Valid(newClock.TimeZoneId))return Results.BadRequest(new{error="Unknown PLC time zone. Use an IANA name such as Asia/Beirut, or leave it blank for a fixed UTC offset."});string Describe(PlcHistoryLayout x)=>string.IsNullOrWhiteSpace(x.TimeZoneId)?$"UTC offset {x.UtcOffsetMinutes} minutes":$"time zone {x.TimeZoneId}";if(PlcClock.Same(oldClock,newClock)&&oldClock.UtcOffsetMinutes==newClock.UtcOffsetMinutes)return Results.Ok(new{message="The PLC clock is already set to that value.",updated=0});long count;using(var db=s.Store.Open()){using var q=db.CreateCommand();q.CommandText="SELECT COUNT(*) FROM plc_snapshots WHERE controller=$id";q.Parameters.AddWithValue("$id",id.ToString());count=Convert.ToInt64(q.ExecuteScalar());}if(count==0)return Results.BadRequest(new{error="No imported PLC history exists. Change utcOffsetMinutes or timeZoneId in the layout and save it normally."});var backup=Path.Combine(s.DirectoryPath,$"before-plc-history-offset-{id:N}-{DateTime.UtcNow:yyyyMMddHHmmss}.db");s.Store.Backup(backup);s.PruneSafetyBackups();controller.History.UtcOffsetMinutes=newClock.UtcOffsetMinutes;controller.History.TimeZoneId=newClock.TimeZoneId;PlcHistory.Validate(controller,c);int updated=0;await s.Save(c,$"Migrated PLC history clock from {Describe(oldClock)} to {Describe(newClock)}; preserved sequences; backup {Path.GetFileName(backup)}",db=>updated=PlcHistory.MigrateClock(db,id,oldClock,newClock));return Results.Ok(new{message=$"Updated {updated} PLC snapshot timestamp(s). Backup created: {Path.GetFileName(backup)}.",updated,backup=Path.GetFileName(backup)});}catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}finally{s.Gate.Release();}});
   // V4.3.7: proposal only; nothing is saved until the engineer reviews it and selects Save history layout.
   api.MapGet("/plc-history/{id:guid}/standard-layout",(Guid id,int? yearBase,string? variant,ServerState s)=>{try{return Results.Ok(PlcHistoryTemplates.Standard(s.Engine.Config,id,yearBase??0,variant??PlcHistoryTemplates.Buffer144));}catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}});
@@ -63,6 +63,34 @@ public static class PlcHistoryEndpoints
   Close();
   workbook.Workbook=new Workbook(new Sheets(sheets.Select((id,i)=>new Sheet{Id=id,SheetId=(uint)(i+1),Name=sheets.Count==1&&line<=1?"History":"History "+(i+1)})));
   workbook.Workbook.Save();
+ }
+ public const string FormatChangeQuestion="RECORD FORMAT CHANGE: this PLC already has imported history in a different record format. Saving keeps every imported sample unchanged and imports only records with a newer sequence in the new format. Do this only after the PLC program was changed and its count and slot (D3903, D3904, D4903, D4904) were reset. Continue?";
+ // V4.3.9: a record-format change (record size, fields or channels) is allowed once confirmed. Imported samples
+ // are never re-read: the server records the highest imported sequence and new imports start above it.
+ public static async Task<IResult> SaveMapping(ServerState s,Guid id,HistoryMappingInput input)
+ {
+  await s.Gate.WaitAsync();
+  try
+  {
+   if(input.Revision!=s.Revision)return Results.Conflict(new{error="Configuration changed. Reload before saving."});
+   var c=s.Clone();var controller=c.Controllers.SingleOrDefault(x=>x.Id==id);if(controller==null)return Results.NotFound();
+   if(input.Layout is null)return Results.BadRequest(new{error="Enter the history layout."});
+   long stored,newest;
+   using(var db=s.Store.Open()){using var q=db.CreateCommand();q.CommandText="SELECT COUNT(*),COALESCE(MAX(sequence),0) FROM plc_snapshots WHERE controller=$id";q.Parameters.AddWithValue("$id",id.ToString());using var r=q.ExecuteReader();r.Read();stored=r.GetInt64(0);newest=r.GetInt64(1);}
+   var action="PLC history mapping updated";
+   input.Layout.ImportAfterSequence=controller.History.ImportAfterSequence; // server-owned, never taken from the browser
+   if(stored>0&&!PlcHistory.SameRecordFormat(controller.History,input.Layout))
+   {
+    if(!PlcHistory.SameClock(controller.History,input.Layout))return Results.BadRequest(new{error="This PLC already has imported history. Clock settings (utcOffsetMinutes, timeZoneId, yearBase) cannot change here; use Correct stored timestamps."});
+    if(!input.ConfirmFormatChange)return Results.Conflict(new{error=FormatChangeQuestion,confirmFormatChange=true});
+    input.Layout.ImportAfterSequence=Math.Max(controller.History.ImportAfterSequence,newest);
+    action=$"PLC history record format changed ({controller.History.RecordWords} -> {input.Layout.RecordWords} words, {controller.History.Channels.Count} -> {input.Layout.Channels.Count} channel(s)); {stored} imported record(s) kept; new imports start after sequence {input.Layout.ImportAfterSequence}";
+   }
+   controller.History=input.Layout;PlcHistory.Validate(controller,c);await s.Save(c,action);
+   return Results.Ok(new{message=action});
+  }
+  catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}
+  finally{s.Gate.Release();}
  }
  static string Csv(string s)=>"\""+((s.Length>0&&"=+-@\t\r".Contains(s[0])&&!double.TryParse(s,System.Globalization.NumberStyles.Float,System.Globalization.CultureInfo.InvariantCulture,out _))?"'"+s:s).Replace("\"","\"\"")+"\"";
  static string[] Cells(StoredHistory r)=>[r.Controller.ToString(),r.Plc,r.Sensor.ToString(),r.Name,r.At,r.Value?.ToString(System.Globalization.CultureInfo.InvariantCulture)??"",r.Quality,r.Sequence?.ToString()??"",r.Source];

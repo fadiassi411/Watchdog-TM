@@ -37,7 +37,9 @@ public static class PlcHistory
  }
  // Fields that only say WHERE records are stored in the PLC. Moving the buffer (for example into the
  // DVP retained area) keeps every record's sequence and content, so imported history stays valid.
- static readonly string[] StorageOnlyFields=["Enabled","SyncSeconds","Verification","Capacity","BufferAddress","Segments"];
+ static readonly string[] StorageOnlyFields=["Enabled","SyncSeconds","Verification","Capacity","BufferAddress","Segments","ImportAfterSequence"];
+ // Clock settings decide the stored time of every sample; they change only through the timestamp correction.
+ public static bool SameClock(PlcHistoryLayout a,PlcHistoryLayout b)=>a.YearBase==b.YearBase&&a.UtcOffsetMinutes==b.UtcOffsetMinutes&&string.Equals((a.TimeZoneId??"").Trim(),(b.TimeZoneId??"").Trim(),StringComparison.OrdinalIgnoreCase);
  // True when two layouts decode records identically: same header and record fields, clock and channels.
  public static bool SameRecordFormat(PlcHistoryLayout current,PlcHistoryLayout next)
  {
@@ -51,7 +53,8 @@ public static class PlcHistory
   void Need(bool ok,string message){if(!ok)throw new ArgumentException(message);}
   Need(c.Protocol!=Protocol.Simulation,"History requires a real PLC.");
   Need(!string.IsNullOrWhiteSpace(h.Verification),"Enter the verified PLC project/layout reference.");
-  Need(h.Capacity is 111 or 144 or 300,"Use 144 snapshots (24 hours), 111 snapshots (retained DVP buffer, about 18.5 hours) or the existing 300-snapshot layout (50 hours).");
+  // V4.3.9: any buffer size from 6 records (1 hour) to 300 (50 hours), so each PLC can record as many sensors as its memory allows.
+  Need(h.Capacity is >= 6 and <= 300,"Use 6 to 300 snapshots (1 to 50 hours at 10-minute intervals); 144 is one day.");
   Need(h.SyncSeconds>=10&&h.SyncSeconds<=86400,"Use synchronization from 10 to 86400 seconds.");
   Need(h.HeaderAddress.HasValue&&(h.BufferAddress.HasValue||h.Segments.Count>0),"Verified header and buffer addresses are required.");
   Need(h.HeaderWords>=5&&h.HeaderWords<=125&&h.RecordWords>=11&&h.RecordWords<=125,"Invalid header or record length.");
@@ -66,7 +69,7 @@ public static class PlcHistory
   Need(PlcClock.Valid(h.TimeZoneId),"Unknown PLC time zone. Use an IANA name such as Asia/Beirut, or leave it blank to use the fixed UTC offset.");
   var fields=new[]{h.RecordSequenceOffset,h.RecordSequenceOffset+1,h.RecordStatusOffset,h.IntervalOffset}.Concat(h.TimestampOffsets).Concat(h.Channels.Select(x=>x.Offset)).ToArray();
   Need(fields.All(x=>x>=0&&x<h.RecordWords)&&fields.Distinct().Count()==fields.Length,"Record fields overlap or exceed record size.");
-  Need(h.Channels.Count>0&&h.Channels.Count<=18&&h.Channels.Select(x=>x.SensorId).Distinct().Count()==h.Channels.Count,"Map each sensor exactly once.");
+  Need(h.Channels.Count>0&&h.Channels.Count<=115&&h.Channels.Select(x=>x.SensorId).Distinct().Count()==h.Channels.Count,"Map each sensor exactly once.");
   Need(h.Channels.All(x=>double.IsFinite(x.Multiplier)&&x.Multiplier!=0&&config.Sensors.Any(s=>s.Id==x.SensorId&&s.ControllerId==c.Id)),"History channels must reference this PLC's stable sensor IDs.");
  }
  static uint Sequence(ushort[] words,int offset,bool low)=>low?((uint)words[offset+1]<<16)|words[offset]:((uint)words[offset]<<16)|words[offset+1];
@@ -101,7 +104,7 @@ public static class PlcHistory
   }
   throw new IOException("PLC buffer changed during download or is busy. Retrying later; no history imported.");
  }
- public static int Import(Store store,Guid controller,List<PlcSnapshot> rows)
+ public static int Import(Store store,Guid controller,List<PlcSnapshot> rows,long importAfterSequence=0)
  {
   int inserted=0;if(rows.Count==0)return 0;
   store.Write(db=>{
@@ -109,6 +112,7 @@ public static class PlcHistory
    if(rows[^1].Sequence<last)throw new IOException("PLC sequence moved backwards. Verify PLC reset/sequence retention before importing.");
    long expected=last+1;
    foreach(var row in rows){
+    if(row.Sequence<=importAfterSequence)continue; // already imported in the previous record format
     if(row.Sequence>expected)Store.Run(db,"INSERT OR IGNORE INTO plc_gaps(controller,first_sequence,last_sequence,detected) VALUES($0,$1,$2,$3)",controller.ToString(),expected,row.Sequence-1,Store.Utc(DateTimeOffset.UtcNow));
     q.CommandText="SELECT hash FROM plc_snapshots WHERE controller=$id AND sequence=$seq";q.Parameters.Clear();q.Parameters.AddWithValue("$id",controller.ToString());q.Parameters.AddWithValue("$seq",(long)row.Sequence);
     if(q.ExecuteScalar() is string hash){if(hash!=row.Hash)throw new IOException("PLC reused a sequence with different data. Import stopped.");expected=Math.Max(expected,(long)row.Sequence+1);continue;}
@@ -172,7 +176,7 @@ public sealed class PlcHistoryWorker(ServerState server,Func<Controller,ushort,u
      PlcHistory.Validate(c,config);Progress[id]=new("Downloading","",Progress.GetValueOrDefault(id)?.LastSuccess,0);
      var download=await PlcHistory.Download(c.History,(a,n)=>reader!=null?reader(c,a,n,ct):server.Engine.Transport.Session(c,m=>m.ReadHoldingRegisters(c.UnitId,a,n),ct),ct);
      // No configuration lock is held during network I/O. Reject results after edits/restores.
-     await server.Gate.WaitAsync(ct);try{if(!ReferenceEquals(config,server.Engine.Config))throw new IOException("Configuration changed; retrying history download.");var n=PlcHistory.Import(server.Store,id,download.Rows);var message=$"Imported {n} record(s)."+(download.Skipped>0?$" Skipped {download.Skipped} invalid/stale PLC slot(s).":"");Progress[id]=new("Ready",message,DateTimeOffset.UtcNow,n);}finally{server.Gate.Release();}
+     await server.Gate.WaitAsync(ct);try{if(!ReferenceEquals(config,server.Engine.Config))throw new IOException("Configuration changed; retrying history download.");var n=PlcHistory.Import(server.Store,id,download.Rows,c.History.ImportAfterSequence);var message=$"Imported {n} record(s)."+(download.Skipped>0?$" Skipped {download.Skipped} invalid/stale PLC slot(s).":"");Progress[id]=new("Ready",message,DateTimeOffset.UtcNow,n);}finally{server.Gate.Release();}
      due=DateTimeOffset.UtcNow.AddSeconds(c.History.SyncSeconds);
     }
    }catch(OperationCanceledException)when(ct.IsCancellationRequested){return;}

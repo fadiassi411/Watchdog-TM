@@ -22,7 +22,7 @@ public static class Release438Tests
 
   // Validation accepts 111 and still rejects other sizes.
   plc.History=retained;PlcHistory.Validate(plc,c);Console.WriteLine("PASS 4.3.8 111-record layout validates");
-  foreach(var bad in new[]{110,112}){var copy=System.Text.Json.JsonSerializer.Deserialize<PlcHistoryLayout>(System.Text.Json.JsonSerializer.Serialize(retained))!;copy.Capacity=bad;plc.History=copy;Rejects(()=>PlcHistory.Validate(plc,c),$"capacity {bad} rejected");}
+  foreach(var bad in new[]{5,301}){var copy=System.Text.Json.JsonSerializer.Deserialize<PlcHistoryLayout>(System.Text.Json.JsonSerializer.Serialize(retained))!;copy.Capacity=bad;plc.History=copy;Rejects(()=>PlcHistory.Validate(plc,c),$"capacity {bad} rejected");}
 
   // Moving the buffer keeps imported history valid; changing how records decode does not.
   Check(PlcHistory.SameRecordFormat(standard,retained),"buffer relocation D5000x144 -> D2000x111 allowed with imported history");
