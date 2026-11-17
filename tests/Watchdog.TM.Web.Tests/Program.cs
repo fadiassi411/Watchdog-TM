@@ -46,3 +46,4 @@ await Release436Tests.Run();
 await Release437Tests.Run();
 await Release438Tests.Run();
 await Release439Tests.Run();
+await Release4310Tests.Run();
