@@ -47,3 +47,5 @@ await Release437Tests.Run();
 await Release438Tests.Run();
 await Release439Tests.Run();
 await Release4310Tests.Run();
+await Release441Tests.Run();
+await AlarmEmailFlowTests.Run();

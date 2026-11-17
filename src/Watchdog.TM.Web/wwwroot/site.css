@@ -9,3 +9,7 @@ button.danger{background:#a52a32;color:white}button.danger:hover{background:#812
 .history-color-0{color:#087e8b}.history-color-1{color:#bb3232}.history-color-2{color:#7755bb}.history-color-3{color:#c78100}.history-color-4{color:#287c38}
 
 .temperature-card.alarm-acknowledged{animation:none}.temperature-card.alarm-high.alarm-acknowledged{background:#fff0f0}.temperature-card.alarm-low.alarm-acknowledged{background:#fffbe3}
+.mail-readiness{margin:.6rem 0;padding:.5rem .7rem;border-radius:8px;font-size:.92rem}
+.readiness-ok{background:#eaf6ec;color:#1f5f2c}
+.readiness-blocked{background:#fdecec;color:#8a1c24}
+.error-text{color:#8a1c24}

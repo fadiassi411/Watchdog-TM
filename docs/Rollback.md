@@ -1,6 +1,6 @@
 # Returning to an earlier Watchdog TM version
 
-Every earlier release stays available, unchanged, on the GitHub Releases page: V4.3.9, V4.3.8, V4.3.7, V4.3.6, V4.3.5, V4.3.4, V4.3.3 and older. Each release keeps its own installer, ZIP and SHA256SUMS.txt.
+Every earlier release stays available, unchanged, on the GitHub Releases page: V4.3.10, V4.3.9, V4.3.8, V4.3.7, V4.3.6, V4.3.5, V4.3.4, V4.3.3 and older. Each release keeps its own installer, ZIP and SHA256SUMS.txt.
 
 The server database (C:\ProgramData\Watchdog TM\watchdog.db) is kept by every installer and uninstaller, so changing version does not remove configuration, password, license or history.
 
@@ -9,7 +9,7 @@ The server database (C:\ProgramData\Watchdog TM\watchdog.db) is kept by every in
 1. In **Backup and restore**, download a database backup.
 2. Keep the installer you are currently using (for example `Watchdog-TM-Server-4.3.4-Setup.exe`) next to the backup.
 
-## Roll back from V4.3.10, V4.3.9, V4.3.8, V4.3.7 or V4.3.6
+## Roll back from V4.4.1, V4.3.10, V4.3.9, V4.3.8, V4.3.7 or V4.3.6
 
 1. Download the installer for the version you want from GitHub Releases, for example **Watchdog TM V4.3.4** → `Watchdog-TM-Server-4.3.4-Setup.exe`. Optionally check it against that release's SHA256SUMS.txt.
 2. Run it as administrator. It installs over the newer version and restarts the Watchdog TM service with the same database.
