@@ -3,9 +3,10 @@ public static class SmtpEndpoints
 {
     public static void MapSmtp(this RouteGroupBuilder api)
     {
-        api.MapGet("/smtp",async(ServerState s)=>{await s.Gate.WaitAsync();try{var c=s.Engine.Config;var m=c.Settings;return Results.Ok(new{revision=s.Revision,enabled=m.MailEnabled,automatic=m.AutomaticAlerts,host=m.SmtpHost,port=m.SmtpPort,security=m.MailSecurity,username=m.SmtpUsername,hasPassword=m.MailPassword.Length>0,senderEmail=m.SenderEmail,senderName=m.SenderName,testRecipient=m.TestRecipient,message=m.StandardMessage,simulation=m.Simulation,fault=s.MailFault,subscriptions=c.Sensors.Select(x=>new{x.Id,x.Name,enabled=x.EmailEnabled,recipients=x.Recipients,high=x.EmailHigh,low=x.EmailLow,recovery=x.RecoveryEmail,reminders=x.Reminders,reminderMinutes=x.ReminderMinutes}),history=s.Notifications.History()});}finally{s.Gate.Release();}});
+        api.MapGet("/smtp",async(ServerState s)=>{await s.Gate.WaitAsync();try{var c=s.Engine.Config;var m=c.Settings;return Results.Ok(new{revision=s.Revision,enabled=m.MailEnabled,automatic=m.AutomaticAlerts,host=m.SmtpHost,port=m.SmtpPort,security=m.MailSecurity,username=m.SmtpUsername,hasPassword=m.MailPassword.Length>0,senderEmail=m.SenderEmail,senderName=m.SenderName,testRecipient=m.TestRecipient,message=m.StandardMessage,simulation=m.Simulation,fault=s.MailFault,readiness=AlarmNotifications.GlobalIssues(c),subscriptions=c.Sensors.Select(x=>new{x.Id,x.Name,enabled=x.EmailEnabled,recipients=x.Recipients,high=x.EmailHigh,low=x.EmailLow,recovery=x.RecoveryEmail,reminders=x.Reminders,reminderMinutes=x.ReminderMinutes,issues=AlarmNotifications.SensorIssues(c,x),coverage=AlarmNotifications.Coverage(x)}),history=s.Notifications.History()});}finally{s.Gate.Release();}});
         api.MapPost("/smtp",(ServerState s,MailInput input,HttpContext ctx)=>Save(s,input,false,ctx.RequestAborted));
         api.MapPost("/smtp/test",(ServerState s,MailInput input,HttpContext ctx)=>Save(s,input,true,ctx.RequestAborted));
+        api.MapPost("/smtp/sensor/{id:guid}/test",(Guid id,ServerState s,HttpContext ctx)=>SensorTest(s,id,ctx.RequestAborted));
         api.MapPost("/smtp/sensor/{id:guid}",async(Guid id,SubscriptionInput input,ServerState s)=>{
             await s.Gate.WaitAsync();try{
                 if(input.Revision!=s.Revision)return Results.Conflict(new{error="Settings changed. Reload this page and retry."});
@@ -16,6 +17,21 @@ public static class SmtpEndpoints
                 await s.Save(c,"Sensor email notification settings updated");s.Notifications.Reset(id);return Results.Ok(new{message="Sensor notification settings saved."});
             }catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}finally{s.Gate.Release();}
         });
+    }
+    // V4.4.1: sends one sample alarm email to the sensor's own recipients, using the saved SMTP settings and the
+    // real alarm format. Nothing is queued or saved; the configuration lock is not held while sending.
+    public static async Task<IResult> SensorTest(ServerState s,Guid id,CancellationToken ct)
+    {
+        var c=s.Engine.Config;var sensor=c.Sensors.FirstOrDefault(x=>x.Id==id);if(sensor is null)return Results.NotFound();
+        if(string.IsNullOrWhiteSpace(sensor.Recipients))return Results.BadRequest(new{error="Save recipients for this sensor first."});
+        try{SmtpDelivery.Addresses(sensor.Recipients);SmtpDelivery.Validate(c.Settings);}catch(ArgumentException ex){return Results.BadRequest(new{error=ex.Message});}
+        var controller=c.Controllers.FirstOrDefault(x=>x.Id==sensor.ControllerId);var reading=s.Engine.Display(sensor);
+        var body=$"{c.Settings.StandardMessage}\n\nTEST - this is a sample of the alarm email for this sensor. It is not a temperature alarm.\nWatchdog TM - {c.Settings.Site}\nSensor: {sensor.Name}\nLocation: {sensor.Location}\nController: {controller?.Name}\nCurrent reading: {(reading.Temperature is double t?t.ToString("F"+sensor.Decimals)+" °C":reading.Quality)}\nHigh limit: {sensor.SoftwareHighLimit?.ToString()??"Off"} °C\nLow limit: {sensor.SoftwareLowLimit?.ToString()??"Off"} °C\nSent: {DateTimeOffset.UtcNow:O}\nNo values were written to the PLC.";
+        try{await SmtpDelivery.Send(c.Settings,sensor.Recipients,$"Watchdog TM - TEST alarm email - {sensor.Name}",body,Guid.NewGuid()+"@watchdog.local",ct);}
+        catch(Exception ex) when(ex is not ArgumentException){return Results.BadRequest(new{error=SmtpDelivery.SafeError(ex)});}
+        s.Store.Audit("Administrator",$"Test alarm email submitted for sensor {sensor.Id} (recipients omitted from audit)");
+        var issues=AlarmNotifications.GlobalIssues(c).Concat(AlarmNotifications.SensorIssues(c,sensor)).ToArray();
+        return Results.Ok(new{message=$"Test alarm email submitted to the mail server for {sensor.Recipients}."+(issues.Length>0?" Note: automatic alarm email for this sensor is still blocked: "+string.Join(" ",issues):" Automatic alarm email for this sensor is ready.")});
     }
     static async Task<IResult> Save(ServerState s,MailInput input,bool test,CancellationToken ct)
     {
