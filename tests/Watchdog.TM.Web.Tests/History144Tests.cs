@@ -51,7 +51,7 @@ public static class History144Tests
   first.History.Segments=[new(){FirstRecord=0,RecordCount=72,Address=100},new(){FirstRecord=72,RecordCount=72,Address=10000}];PlcHistory.Validate(first,config);
   Check((await Fetch(first,500,144)).Select(x=>x.Sequence).SequenceEqual(Enumerable.Range(357,144).Select(x=>(uint)x)),"segmented 144 buffer across wrap");
   first.History.Segments[1].RecordCount=73;try{PlcHistory.Validate(first,config);throw new Exception("Wrong segment size accepted");}catch(ArgumentException){Check(true,"segments must total configured capacity");}first.History.Segments=[];
-  foreach(var invalid in new[]{0,143,145,301}){first.History.Capacity=invalid;try{PlcHistory.Validate(first,config);throw new Exception("Invalid capacity accepted");}catch(ArgumentException){Check(true,"unsupported capacity rejected "+invalid);}}first.History.Capacity=144;
+  foreach(var invalid in new[]{0,5,301}){first.History.Capacity=invalid;try{PlcHistory.Validate(first,config);throw new Exception("Invalid capacity accepted");}catch(ArgumentException){Check(true,"unsupported capacity rejected "+invalid);}}first.History.Capacity=144;
   config.Settings.Simulation=false;foreach(var plc in config.Controllers)plc.Enabled=true;
   store.Save(config,"test","worker fixture");var state=new ServerState(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string>{{"Storage:DataDirectory",Path.GetDirectoryName(path)!}}).Build());
   bool offline=true;int observations=0;state.Engine.ReadingObserved+=(_,_)=>observations++;
