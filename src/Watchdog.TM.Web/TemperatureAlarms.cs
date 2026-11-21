@@ -87,7 +87,7 @@ public sealed class TemperatureAlarms
                 store.Write(db=>{
                     Store.Run(db,"UPDATE temperature_alarm_state SET json=$0 WHERE sensor=$1",JsonSerializer.Serialize(s),id.ToString());
                     Store.Run(db,"UPDATE mail_outbox SET status='Cancelled',error='Alarm acknowledged' WHERE sensor=$0 AND kind LIKE '%reminder' AND status='Pending'",id.ToString());
-                    Store.Audit(db,"Administrator",$"Temperature alarm acknowledged for {id}, episode {episode}");
+                    Store.Audit(db,Actor.Current,$"Temperature alarm acknowledged for {id}, episode {episode}");
                 });
             }
             return true;

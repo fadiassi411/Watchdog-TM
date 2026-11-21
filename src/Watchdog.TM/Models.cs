@@ -126,6 +126,21 @@ public sealed class Settings
     [Browsable(false)] public string PasswordHash { get; set; } = "";
     [Browsable(false)] public string LicenseJson { get; set; } = "";
     [Browsable(false)] public List<Guid> CommissionedSensors { get; set; } = [];
+    // V4.5.0 web user levels. The built-in Administrator (PasswordHash) always has full access.
+    [Browsable(false)] public List<WebUser> Users { get; set; } = [];
+    [Browsable(false)] public List<UserLevel> UserLevels { get; set; } = [];
+}
+public sealed class WebUser
+{
+    public Guid Id { get; set; } = Guid.NewGuid(); public string Name { get; set; } = ""; public string PasswordHash { get; set; } = "";
+    public Guid LevelId { get; set; } public bool Enabled { get; set; } = true;
+}
+public sealed class UserLevel
+{
+    public Guid Id { get; set; } = Guid.NewGuid(); public string Name { get; set; } = "";
+    public List<string> Permissions { get; set; } = [];
+    // When false, the level sees and acts on only the listed sensors.
+    public bool AllSensors { get; set; } = true; public List<Guid> Sensors { get; set; } = [];
 }
 public sealed class Configuration
 {
@@ -241,6 +256,9 @@ public sealed class PlcHistoryLayout
  // When set, PLC local timestamps follow that zone's daylight-saving rules and
  // UtcOffsetMinutes is ignored. Blank keeps the fixed UtcOffsetMinutes behaviour.
  public string TimeZoneId {get;set;}="";
+ // V4.3.9: set by the server when the record format changes after history was imported. Records with a
+ // sequence at or below this value were already imported in the previous format and are never re-read.
+ public long ImportAfterSequence {get;set;}
  public bool LowWordFirst {get;set;}=true;
  public int HealthyStatus {get;set;}=0;
  public List<PlcHistoryChannel> Channels {get;set;}=[];
