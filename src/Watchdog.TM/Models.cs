@@ -126,6 +126,21 @@ public sealed class Settings
     [Browsable(false)] public string PasswordHash { get; set; } = "";
     [Browsable(false)] public string LicenseJson { get; set; } = "";
     [Browsable(false)] public List<Guid> CommissionedSensors { get; set; } = [];
+    // V4.5.0 web user levels. The built-in Administrator (PasswordHash) always has full access.
+    [Browsable(false)] public List<WebUser> Users { get; set; } = [];
+    [Browsable(false)] public List<UserLevel> UserLevels { get; set; } = [];
+}
+public sealed class WebUser
+{
+    public Guid Id { get; set; } = Guid.NewGuid(); public string Name { get; set; } = ""; public string PasswordHash { get; set; } = "";
+    public Guid LevelId { get; set; } public bool Enabled { get; set; } = true;
+}
+public sealed class UserLevel
+{
+    public Guid Id { get; set; } = Guid.NewGuid(); public string Name { get; set; } = "";
+    public List<string> Permissions { get; set; } = [];
+    // When false, the level sees and acts on only the listed sensors.
+    public bool AllSensors { get; set; } = true; public List<Guid> Sensors { get; set; } = [];
 }
 public sealed class Configuration
 {

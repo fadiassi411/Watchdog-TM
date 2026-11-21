@@ -37,7 +37,8 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     o.Cookie.Name="WatchdogTM.Session"; o.Cookie.HttpOnly=true;o.Cookie.SameSite=SameSiteMode.Strict;
     o.Cookie.SecurePolicy=CookieSecurePolicy.SameAsRequest;o.ExpireTimeSpan=TimeSpan.FromDays(30);o.SlidingExpiration=true;
     o.Events.OnRedirectToLogin=c=>{c.Response.StatusCode=401;return Task.CompletedTask;};
-    o.Events.OnValidatePrincipal=c=>{var server=c.HttpContext.RequestServices.GetRequiredService<ServerState>();if(c.Principal?.FindFirstValue("stamp")!=Stamp(server.Engine.Config.Settings.PasswordHash))c.RejectPrincipal();return Task.CompletedTask;};
+    // V4.5.0: each cookie is tied to its own account; a password change, disable or delete ends that sign-in.
+    o.Events.OnValidatePrincipal=c=>{var server=c.HttpContext.RequestServices.GetRequiredService<ServerState>();var hash=Access.HashFor(c.Principal?.FindFirstValue("uid"),server.Engine.Config);if(hash is null||c.Principal?.FindFirstValue("stamp")!=Stamp(hash))c.RejectPrincipal();return Task.CompletedTask;};
 });
 builder.Services.AddAuthorization();
 builder.Services.AddAntiforgery(o=>{o.HeaderName="X-CSRF-TOKEN";o.Cookie.Name="WatchdogTM.Csrf";o.Cookie.SameSite=SameSiteMode.Strict;});
@@ -60,11 +61,19 @@ app.Use(async(ctx,next)=>{
 });
 app.UseDefaultFiles();app.UseStaticFiles();app.UseRouting();app.UseRateLimiter();app.UseAuthentication();app.UseAuthorization();
 app.MapGet("/health",()=>Results.Ok(new{status="running"}));
-app.MapGet("/api/session",(HttpContext ctx,IAntiforgery csrf,ServerState s)=>Results.Ok(new{authenticated=ctx.User.Identity?.IsAuthenticated==true,setup=s.Engine.Config.Settings.PasswordHash.Length==0,csrf=csrf.GetAndStoreTokens(ctx).RequestToken}));
+app.MapGet("/api/session",(HttpContext ctx,IAntiforgery csrf,ServerState s)=>{var signedIn=ctx.User.Identity?.IsAuthenticated==true;var who=signedIn?Access.Resolve(ctx.User,s.Engine.Config):null;
+    return Results.Ok(new{authenticated=signedIn,setup=s.Engine.Config.Settings.PasswordHash.Length==0,csrf=csrf.GetAndStoreTokens(ctx).RequestToken,
+    user=who is null?null:new{name=who.Name,admin=who.Admin,permissions=who.Permissions.ToArray(),allSensors=who.AllSensors}});});
 app.MapPost("/api/login",async(HttpContext ctx,IAntiforgery csrf,ServerState s,Login input)=>{
     await csrf.ValidateRequestAsync(ctx);
-    if(input.Password.Length>256||!Security.Verify(input.Password,s.Engine.Config.Settings.PasswordHash))return Results.Json(new{error="Incorrect administrator password."},statusCode:401);
-    await ctx.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity(new[]{new Claim(ClaimTypes.Name,"Administrator"),new Claim("stamp",Stamp(s.Engine.Config.Settings.PasswordHash))},CookieAuthenticationDefaults.AuthenticationScheme)),new AuthenticationProperties{IsPersistent=true,AllowRefresh=true});
+    // V4.5.0: a blank user name (or "Administrator") signs in as the built-in administrator, as before.
+    var config=s.Engine.Config;var username=(input.Username??"").Trim();var admin=username.Length==0||username.Equals("Administrator",StringComparison.OrdinalIgnoreCase);
+    var account=admin?null:config.Settings.Users.FirstOrDefault(x=>x.Enabled&&x.Name.Equals(username,StringComparison.OrdinalIgnoreCase));
+    var hash=admin?config.Settings.PasswordHash:account?.PasswordHash??"";
+    var valid=input.Password.Length<=256&&Security.Verify(input.Password,hash.Length>0?hash:DummyHash.Value.Value)&&hash.Length>0;
+    if(!valid)return Results.Json(new{error=admin?"Incorrect administrator password.":"Incorrect user name or password."},statusCode:401);
+    await ctx.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity(new[]{new Claim(ClaimTypes.Name,admin?"Administrator":account!.Name),new Claim("uid",admin?Access.AdminId:account!.Id.ToString()),new Claim("stamp",Stamp(hash))},CookieAuthenticationDefaults.AuthenticationScheme)),new AuthenticationProperties{IsPersistent=true,AllowRefresh=true});
+    Actor.Name.Value=admin?"Administrator":account!.Name;s.Store.Audit(Actor.Current,"Signed in to the web server");
     return Results.Ok();
 }).RequireRateLimiting("login");
 app.MapPost("/api/setup",async(HttpContext ctx,IAntiforgery csrf,ServerState s,Login input)=>{
@@ -73,16 +82,18 @@ app.MapPost("/api/setup",async(HttpContext ctx,IAntiforgery csrf,ServerState s,L
 }).RequireRateLimiting("login");
 var api=app.MapGroup("/api").RequireAuthorization();
 api.AddEndpointFilter(async(context,next)=>{var ctx=context.HttpContext;if(ctx.Request.Method!="GET")await ctx.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(ctx);return await next(context);});
+api.AddEndpointFilter(Access.Filter);
+api.MapUsers();
 api.MapSmtp();
 api.MapPlcHistory();
 api.MapDeletion();
 api.MapPost("/logout",async(HttpContext ctx)=>{await ctx.SignOutAsync();return Results.Ok();});
-api.MapGet("/state",async (ServerState s)=>{ await s.Gate.WaitAsync(); try { return Results.Ok(new{
+api.MapGet("/state",async (ServerState s,HttpContext ctx)=>{ await s.Gate.WaitAsync(); try { var who=Access.Current(ctx);var visible=s.Engine.Config.Sensors.Where(x=>who.Sees(x.Id)).ToArray(); return Results.Ok(new{
     revision=s.Revision,simulation=s.Engine.Config.Settings.Simulation,site=s.Engine.Config.Settings.Site,keepComputerAwake=s.Engine.Config.Settings.KeepComputerAwake,awakeStatus=s.PowerAvailability.Status,
     license=Security.LicenseStatus(s.Engine.Config),installationId=Security.InstallationId,
-    controllers=s.Engine.Config.Controllers.ToArray(),
-    sensors=s.Engine.Config.Sensors.Select(x=>new{x.Id,x.ControllerId,x.Name,x.Location,x.Enabled,x.Retired,x.TemperatureOffset,x.TemperatureFunction,x.Format,x.Order,x.Multiplier,x.Offset,x.Decimals,x.SampleSeconds,x.SoftwareHighLimit,x.SoftwareLowLimit,x.AlarmDelaySeconds,x.AlarmHysteresis}).ToArray(),
-    readings=s.Engine.Config.Sensors.Select(x=>{var reading=s.Engine.Display(x);var status=s.Notifications.Alarms.Current(x,reading);return new{id=x.Id,reading,alarm=status.Level,alarmStatus=status};}).ToArray(),states=s.Engine.States.ToDictionary(x=>x.Key,x=>new{x.Value.Status,x.Value.LastSuccess,x.Value.Error}),
+    controllers=s.Engine.Config.Controllers.Where(x=>who.AllSensors||who.Can(Access.Controllers)||visible.Any(v=>v.ControllerId==x.Id)).ToArray(),
+    sensors=visible.Select(x=>new{x.Id,x.ControllerId,x.Name,x.Location,x.Enabled,x.Retired,x.TemperatureOffset,x.TemperatureFunction,x.Format,x.Order,x.Multiplier,x.Offset,x.Decimals,x.SampleSeconds,x.SoftwareHighLimit,x.SoftwareLowLimit,x.AlarmDelaySeconds,x.AlarmHysteresis}).ToArray(),
+    readings=visible.Select(x=>{var reading=s.Engine.Display(x);var status=s.Notifications.Alarms.Current(x,reading);return new{id=x.Id,reading,alarm=status.Level,alarmStatus=status};}).ToArray(),states=s.Engine.States.ToDictionary(x=>x.Key,x=>new{x.Value.Status,x.Value.LastSuccess,x.Value.Error}),
     fault=s.Store.Fault+" "+s.Engine.OperationalFault+" "+s.MailFault
 }); } finally { s.Gate.Release(); } });
 api.MapPost("/controller",async(ServerState s,ControllerEdit edit)=>{
@@ -141,17 +152,19 @@ api.MapPost("/recording/{id:guid}",async(Guid id,RecordingInterval input,ServerS
 api.MapGet("/history/{id:guid}",(Guid id,DateTimeOffset from,DateTimeOffset to,ServerState s)=>{if(to<from||to-from>TimeSpan.FromDays(31))return Results.BadRequest(new{error="Select a range of up to 31 days."});return Results.Ok(s.Store.Samples(id,from,to));});
 api.MapGet("/export/{id:guid}",(Guid id,DateTimeOffset from,DateTimeOffset to,ServerState s,HttpContext ctx)=>{if(to<from||to-from>TimeSpan.FromDays(31))return Results.BadRequest(new{error="Select a range of up to 31 days."});var config=s.Engine.Config;var sensor=config.Sensors.FirstOrDefault(x=>x.Id==id);var controller=sensor is null?null:config.Controllers.FirstOrDefault(x=>x.Id==sensor.ControllerId);if(sensor is null||controller is null)return Results.NotFound();var path=Path.Combine(s.DirectoryPath,"export-"+Guid.NewGuid()+".xlsx");try{Exporter.Export(s.Store,sensor,controller,from,to,path,ctx.RequestAborted);return Results.File(TemporaryFiles.OpenAndDelete(path),"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","Watchdog-temperatures.xlsx");}catch{TemporaryFiles.Delete(path);throw;}});
 api.MapPost("/license",async(ServerState s,LicenseInput input)=>{await s.Gate.WaitAsync();try{Security.License(input.Json);var c=s.Clone();c.Settings.LicenseJson=input.Json;Security.Capacity(c);await s.Save(c,"TM license imported");return Results.Ok();}finally{s.Gate.Release();}});
-api.MapPost("/password",async(ServerState s,PasswordInput input,HttpContext ctx)=>{await s.Gate.WaitAsync();try{if(!Security.Verify(input.Current,s.Engine.Config.Settings.PasswordHash))return Results.BadRequest(new{error="Current password is incorrect."});if(input.Password.Length>256)return Results.BadRequest();var c=s.Clone();c.Settings.PasswordHash=Security.Hash(input.Password);await s.Save(c,"Administrator password changed");await ctx.SignOutAsync();return Results.Ok();}finally{s.Gate.Release();}});
+api.MapPost("/password",async(ServerState s,PasswordInput input,HttpContext ctx)=>{await s.Gate.WaitAsync();try{var who=Access.Current(ctx);if(!who.Admin){var mine=s.Engine.Config.Settings.Users.FirstOrDefault(x=>x.Id.ToString()==who.Id);if(mine is null||!Security.Verify(input.Current,mine.PasswordHash))return Results.BadRequest(new{error="Current password is incorrect."});if(input.Password.Length>256)return Results.BadRequest();var u=s.Clone();u.Settings.Users.First(x=>x.Id==mine.Id).PasswordHash=Security.Hash(input.Password);await s.Save(u,$"Password changed by user '{mine.Name}'");await ctx.SignOutAsync();return Results.Ok();}if(!Security.Verify(input.Current,s.Engine.Config.Settings.PasswordHash))return Results.BadRequest(new{error="Current password is incorrect."});if(input.Password.Length>256)return Results.BadRequest();var c=s.Clone();c.Settings.PasswordHash=Security.Hash(input.Password);await s.Save(c,"Administrator password changed");await ctx.SignOutAsync();return Results.Ok();}finally{s.Gate.Release();}});
 // Streamed from a temporary file (deleted when the download closes) so large databases do not load into memory.
 api.MapGet("/backup",(ServerState s)=>{var path=Path.Combine(s.DirectoryPath,"download-"+Guid.NewGuid()+".db");try{s.Store.Backup(path);return Results.File(TemporaryFiles.OpenAndDelete(path),"application/octet-stream","WatchdogTM-backup.db");}catch{TemporaryFiles.Delete(path);throw;}});
 api.MapPost("/restore",async(HttpContext ctx,ServerState s)=>{var path=Path.Combine(s.DirectoryPath,"restore-"+Guid.NewGuid()+".db");
     // Kestrel's default 30 MB request limit would reject normal multi-year backups.
     var limit=ctx.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();if(limit is {IsReadOnly:false})limit.MaxRequestBodySize=ServerState.MaximumRestoreBytes;
-    await s.Gate.WaitAsync();try{if(ctx.Request.ContentLength is null or 0 or > ServerState.MaximumRestoreBytes)return Results.BadRequest(new{error="Select a Watchdog TM database backup up to 8 GB."});await using(var output=File.Create(path))await ctx.Request.Body.CopyToAsync(output,ctx.RequestAborted);var candidate=s.Store.InspectBackup(path);Rules.Validate(candidate);candidate.Settings.LicenseJson=s.Engine.Config.Settings.LicenseJson;candidate.Settings.PasswordHash=s.Engine.Config.Settings.PasswordHash;candidate.Settings.Simulation=true;candidate.Settings.CommissionedSensors.Clear();s.Store.Backup(Path.Combine(s.DirectoryPath,"before-restore-"+DateTime.UtcNow.ToString("yyyyMMddHHmmss")+".db"));s.PruneSafetyBackups();await s.Engine.Stop();try{s.Store.Restore(path);s.Notifications.Ensure();s.Notifications.Alarms.ResetAll();s.Notifications.Reset();await s.Save(candidate,"Backup restored; demonstration mode until live monitoring restarted");}catch{await s.Engine.Replace(s.Engine.Config);throw;}return Results.Ok();}finally{s.Gate.Release();if(File.Exists(path))File.Delete(path);}});
+    await s.Gate.WaitAsync();try{if(ctx.Request.ContentLength is null or 0 or > ServerState.MaximumRestoreBytes)return Results.BadRequest(new{error="Select a Watchdog TM database backup up to 8 GB."});await using(var output=File.Create(path))await ctx.Request.Body.CopyToAsync(output,ctx.RequestAborted);var candidate=s.Store.InspectBackup(path);Rules.Validate(candidate);candidate.Settings.LicenseJson=s.Engine.Config.Settings.LicenseJson;candidate.Settings.PasswordHash=s.Engine.Config.Settings.PasswordHash;candidate.Settings.Users=s.Engine.Config.Settings.Users;candidate.Settings.UserLevels=s.Engine.Config.Settings.UserLevels;candidate.Settings.Simulation=true;candidate.Settings.CommissionedSensors.Clear();s.Store.Backup(Path.Combine(s.DirectoryPath,"before-restore-"+DateTime.UtcNow.ToString("yyyyMMddHHmmss")+".db"));s.PruneSafetyBackups();await s.Engine.Stop();try{s.Store.Restore(path);s.Notifications.Ensure();s.Notifications.Alarms.ResetAll();s.Notifications.Reset();await s.Save(candidate,"Backup restored; demonstration mode until live monitoring restarted");}catch{await s.Engine.Replace(s.Engine.Config);throw;}return Results.Ok();}finally{s.Gate.Release();if(File.Exists(path))File.Delete(path);}});
 api.MapGet("/audit",(ServerState s)=>s.Store.Audits());
 app.Run();
 static string Stamp(string hash)=>Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(hash)));
-record Login(string Password);
+record Login(string Password,string? Username=null);
+// Verifying against a fixed hash for unknown names keeps sign-in time the same whether or not the user exists.
+static class DummyHash{public static readonly Lazy<string> Value=new(()=>Security.Hash(Guid.NewGuid().ToString()));}
 record ControllerEdit(string Revision,Controller Controller);
 record SensorEdit(string Revision,Sensor Sensor);
 record Mode(bool Simulation);

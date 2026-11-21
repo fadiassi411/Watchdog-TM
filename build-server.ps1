@@ -3,7 +3,7 @@ Set-Location $PSScriptRoot
 & dotnet publish src/Watchdog.TM.Web/Watchdog.TM.Web.csproj -c Release -r win-x64 --self-contained true -o server -m:1 -nr:false
 if($LASTEXITCODE -ne 0){throw 'Server build failed'}
 Copy-Item docs/Server-setup.md server/Server-setup.md
-Copy-Item docs/Alarm-management.md,docs/Release-4.4.1.md,docs/Rollback.md server
+Copy-Item docs/Alarm-management.md,docs/Release-4.5.0.md,docs/Rollback.md server
 New-Item -ItemType Directory -Force server/notices | Out-Null
 Copy-Item docs/Third-party-licenses/* server/notices
 $iscc=Join-Path $env:LOCALAPPDATA 'Programs/Inno Setup 6/ISCC.exe'

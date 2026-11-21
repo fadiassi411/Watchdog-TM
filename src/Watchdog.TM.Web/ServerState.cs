@@ -47,7 +47,7 @@ public sealed class ServerState : IHostedService
             Store.EnsureHistory(db);
             databaseMutation?.Invoke(db);
             Store.Run(db,"INSERT INTO config VALUES(1,$0) ON CONFLICT(id) DO UPDATE SET json=$0",JsonSerializer.Serialize(c));
-            Store.Audit(db,"Administrator",action);
+            Store.Audit(db,Actor.Current,action);
         });
         foreach(var old in Engine.Config.Sensors)
         {
