@@ -67,10 +67,13 @@ app.MapGet("/api/session",(HttpContext ctx,IAntiforgery csrf,ServerState s)=>{va
 app.MapPost("/api/login",async(HttpContext ctx,IAntiforgery csrf,ServerState s,Login input)=>{
     await csrf.ValidateRequestAsync(ctx);
     // V4.5.0: a blank user name (or "Administrator") signs in as the built-in administrator, as before.
-    var config=s.Engine.Config;var username=(input.Username??"").Trim();var admin=username.Length==0||username.Equals("Administrator",StringComparison.OrdinalIgnoreCase);
+    // V4.5.1: also "admin", or the "Sign in as Administrator" box, which ignores whatever the browser filled into the user name.
+    var config=s.Engine.Config;var username=(input.Username??"").Trim();var admin=input.AsAdministrator||Access.IsAdministratorName(username);
     var account=admin?null:config.Settings.Users.FirstOrDefault(x=>x.Enabled&&x.Name.Equals(username,StringComparison.OrdinalIgnoreCase));
     var hash=admin?config.Settings.PasswordHash:account?.PasswordHash??"";
     var valid=input.Password.Length<=256&&Security.Verify(input.Password,hash.Length>0?hash:DummyHash.Value.Value)&&hash.Length>0;
+    // A user-name sign-in with the Administrator password gets a hint instead of a bare refusal (the person already knows that password).
+    if(!valid&&!admin&&input.Password.Length<=256&&config.Settings.PasswordHash.Length>0&&Security.Verify(input.Password,config.Settings.PasswordHash))return Results.Json(new{error=Access.AdministratorPasswordHint},statusCode:401);
     if(!valid)return Results.Json(new{error=admin?"Incorrect administrator password.":"Incorrect user name or password."},statusCode:401);
     await ctx.SignInAsync(new ClaimsPrincipal(new ClaimsIdentity(new[]{new Claim(ClaimTypes.Name,admin?"Administrator":account!.Name),new Claim("uid",admin?Access.AdminId:account!.Id.ToString()),new Claim("stamp",Stamp(hash))},CookieAuthenticationDefaults.AuthenticationScheme)),new AuthenticationProperties{IsPersistent=true,AllowRefresh=true});
     Actor.Name.Value=admin?"Administrator":account!.Name;s.Store.Audit(Actor.Current,"Signed in to the web server");
@@ -162,7 +165,7 @@ api.MapPost("/restore",async(HttpContext ctx,ServerState s)=>{var path=Path.Comb
 api.MapGet("/audit",(ServerState s)=>s.Store.Audits());
 app.Run();
 static string Stamp(string hash)=>Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(hash)));
-record Login(string Password,string? Username=null);
+record Login(string Password,string? Username=null,bool AsAdministrator=false);
 // Verifying against a fixed hash for unknown names keeps sign-in time the same whether or not the user exists.
 static class DummyHash{public static readonly Lazy<string> Value=new(()=>Security.Hash(Guid.NewGuid().ToString()));}
 record ControllerEdit(string Revision,Controller Controller);

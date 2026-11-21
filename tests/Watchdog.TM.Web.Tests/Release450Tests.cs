@@ -75,7 +75,7 @@ public static class Release450Tests
 
   // Browser: login asks for a user name, menu and controls follow the level.
   var root=Path.Combine(web,"wwwroot");var html=File.ReadAllText(Path.Combine(root,"index.html"));var js=File.ReadAllText(Path.Combine(root,"app.js"));var users=File.ReadAllText(Path.Combine(root,"users.js"));
-  Check(html.Contains("id=\"username\"")&&js.Contains("username:setup?'':$('username').value"),"sign-in sends the user name");
+  Check(html.Contains("id=\"username\"")&&js.Contains("$('username').value"),"sign-in sends the user name");
   Check(html.Contains("href=\"#users\" data-page=\"users\"")&&html.Contains("users.js"),"Users and levels page is in the menu");
   Check(users.Contains("data-permission=")&&users.Contains("data-level-sensor=")&&users.Contains("api('users/level'"),"level editor has permission and sensor checkboxes");
   Check(js.Contains("pageAllowed(")&&js.Contains("applyAccess"),"pages and buttons are hidden for unticked permissions");

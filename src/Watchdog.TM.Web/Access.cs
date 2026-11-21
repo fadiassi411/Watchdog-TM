@@ -24,6 +24,9 @@ public static class Access
         new(Monitoring,"Control","Start / stop live monitoring","Live or demonstration mode and computer sleep protection."),
         new(Email,"Control","Email and SMTP settings","Mail server, sensor recipients and test emails.")];
     public static bool Known(string permission)=>Catalog.Any(x=>x.Id==permission);
+    // V4.5.1: blank, "Administrator" or "admin" all mean the built-in administrator; these names are reserved.
+    public static bool IsAdministratorName(string? name){var n=(name??"").Trim();return n.Length==0||n.Equals("Administrator",StringComparison.OrdinalIgnoreCase)||n.Equals("admin",StringComparison.OrdinalIgnoreCase);}
+    public const string AdministratorPasswordHint="That is the Administrator password. Tick \"Sign in as Administrator\" and sign in again.";
 
     // Required permission per route ("" = any signed-in user, null = Administrator only) and whether {id} is a sensor.
     static readonly Dictionary<string,(string? Permission,bool SensorId)> Routes=new(StringComparer.OrdinalIgnoreCase){

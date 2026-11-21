@@ -60,7 +60,7 @@ public static class UserEndpoints
         await s.Gate.WaitAsync();try{
             if(input.Revision!=s.Revision)return Changed();
             var name=CleanName(input.Name,"user");
-            if(name.Equals("Administrator",StringComparison.OrdinalIgnoreCase))return Results.BadRequest(new{error="'Administrator' is reserved for the built-in administrator."});
+            if(Access.IsAdministratorName(name))return Results.BadRequest(new{error="'Administrator' and 'admin' are reserved for the built-in administrator."});
             var c=s.Clone();var users=c.Settings.Users;
             if(users.Any(x=>x.Id!=input.Id&&x.Name.Equals(name,StringComparison.OrdinalIgnoreCase)))return Results.BadRequest(new{error="Another user already has this name."});
             if(!c.Settings.UserLevels.Any(x=>x.Id==input.LevelId))return Results.BadRequest(new{error="Choose a user level."});
