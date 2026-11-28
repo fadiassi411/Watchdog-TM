@@ -9,7 +9,7 @@ public static class Access
 {
     public const string AdminId="admin";
     public const string Trends="trends",Export="export",Audit="audit",Acknowledge="acknowledge",AlarmLimits="alarm-limits",TestRead="test-read",
-        Sensors="sensors",Controllers="controllers",PlcHistorySetup="plc-history",Monitoring="monitoring",Email="email";
+        Sensors="sensors",Controllers="controllers",PlcHistorySetup="plc-history",Monitoring="monitoring",Email="email",Arrange="arrange-dashboard";
     public sealed record PermissionInfo(string Id,string Group,string Label,string Description);
     public static readonly PermissionInfo[] Catalog=[
         new(Trends,"Monitor","View trends and history","Trends page, saved readings and PLC combined history."),
@@ -22,7 +22,8 @@ public static class Access
         new(Controllers,"Control","Add, edit and delete controllers","PLC connection settings."),
         new(PlcHistorySetup,"Control","PLC history setup","History layouts, header tests, downloads and time-zone corrections."),
         new(Monitoring,"Control","Start / stop live monitoring","Live or demonstration mode and computer sleep protection."),
-        new(Email,"Control","Email and SMTP settings","Mail server, sensor recipients and test emails.")];
+        new(Email,"Control","Email and SMTP settings","Mail server, sensor recipients and test emails."),
+        new(Arrange,"Control","Arrange the dashboard","Drag the temperature blocks into the order every screen shows.")];
     public static bool Known(string permission)=>Catalog.Any(x=>x.Id==permission);
     // V4.5.1: blank, "Administrator" or "admin" all mean the built-in administrator; these names are reserved.
     public static bool IsAdministratorName(string? name){var n=(name??"").Trim();return n.Length==0||n.Equals("Administrator",StringComparison.OrdinalIgnoreCase)||n.Equals("admin",StringComparison.OrdinalIgnoreCase);}
@@ -42,6 +43,7 @@ public static class Access
         ["POST plc-history/{id:guid}/mapping"]=(PlcHistorySetup,false),["POST plc-history/{id:guid}/migrate-utc-offset"]=(PlcHistorySetup,false),
         ["GET plc-history/{id:guid}/standard-layout"]=(PlcHistorySetup,false),["POST plc-history/{id:guid}/download"]=(PlcHistorySetup,false),["POST plc-history/{id:guid}/test-header"]=(PlcHistorySetup,false),
         ["POST mode"]=(Monitoring,false),["POST power"]=(Monitoring,false),
+        ["POST dashboard/order"]=(Arrange,false),
         ["GET smtp"]=(Email,false),["POST smtp"]=(Email,false),["POST smtp/test"]=(Email,false),["POST smtp/sensor/{id:guid}"]=(Email,true),["POST smtp/sensor/{id:guid}/test"]=(Email,true),
     };
 

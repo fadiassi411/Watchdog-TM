@@ -129,6 +129,8 @@ public sealed class Settings
     // V4.5.0 web user levels. The built-in Administrator (PasswordHash) always has full access.
     [Browsable(false)] public List<WebUser> Users { get; set; } = [];
     [Browsable(false)] public List<UserLevel> UserLevels { get; set; } = [];
+    // V4.6.0 dashboard block order (sensor IDs); sensors not listed follow in configuration order.
+    [Browsable(false)] public List<Guid> DashboardOrder { get; set; } = [];
 }
 public sealed class WebUser
 {

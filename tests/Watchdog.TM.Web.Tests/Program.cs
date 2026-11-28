@@ -50,4 +50,5 @@ await Release4310Tests.Run();
 await Release441Tests.Run();
 await Release450Tests.Run();
 await Release451Tests.Run();
+await Release460Tests.Run();
 await AlarmEmailFlowTests.Run();

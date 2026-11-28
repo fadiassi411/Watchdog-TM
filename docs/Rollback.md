@@ -1,6 +1,6 @@
 # Returning to an earlier Watchdog TM version
 
-Every earlier release stays available, unchanged, on the GitHub Releases page: V4.5.0, V4.4.1, V4.3.10, V4.3.9, V4.3.8, V4.3.7, V4.3.6, V4.3.5, V4.3.4, V4.3.3 and older. Each release keeps its own installer, ZIP and SHA256SUMS.txt.
+Every earlier release stays available, unchanged, on the GitHub Releases page: V4.5.1, V4.5.0, V4.4.1, V4.3.10, V4.3.9, V4.3.8, V4.3.7, V4.3.6, V4.3.5, V4.3.4, V4.3.3 and older. Each release keeps its own installer, ZIP and SHA256SUMS.txt.
 
 The server database (C:\ProgramData\Watchdog TM\watchdog.db) is kept by every installer and uninstaller, so changing version does not remove configuration, password, license or history.
 
@@ -9,7 +9,7 @@ The server database (C:\ProgramData\Watchdog TM\watchdog.db) is kept by every in
 1. In **Backup and restore**, download a database backup.
 2. Keep the installer you are currently using (for example `Watchdog-TM-Server-4.3.4-Setup.exe`) next to the backup.
 
-## Roll back from V4.5.1, V4.5.0, V4.4.1, V4.3.10, V4.3.9, V4.3.8, V4.3.7 or V4.3.6
+## Roll back from V4.6.0, V4.5.1, V4.5.0, V4.4.1, V4.3.10, V4.3.9, V4.3.8, V4.3.7 or V4.3.6
 
 1. Download the installer for the version you want from GitHub Releases, for example **Watchdog TM V4.3.4** → `Watchdog-TM-Server-4.3.4-Setup.exe`. Optionally check it against that release's SHA256SUMS.txt.
 2. Run it as administrator. It installs over the newer version and restarts the Watchdog TM service with the same database.
@@ -19,6 +19,7 @@ If you want the database exactly as it was before upgrading, sign in after the r
 
 ## Notes
 
+- Versions before V4.6.0 ignore the arranged dashboard order and show the blocks in configuration order. The arrangement is kept and returns when V4.6.0 is reinstalled.
 - Versions before V4.5.0 ignore user levels and user accounts: only the Administrator password works. The accounts are kept in the database and come back when V4.5.0 is reinstalled.
 - Earlier versions ignore the V4.3.6 `timeZoneId` setting and use the fixed `utcOffsetMinutes` again. Records already imported keep their corrected timestamps. Records downloaded after the rollback use the fixed offset.
 - V4.3.5 to V4.3.9 cannot save alarm limits from the alarm window (fixed in V4.3.10). After rolling back to one of them, change alarm limits only after upgrading again.

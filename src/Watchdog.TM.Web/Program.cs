@@ -87,11 +87,12 @@ var api=app.MapGroup("/api").RequireAuthorization();
 api.AddEndpointFilter(async(context,next)=>{var ctx=context.HttpContext;if(ctx.Request.Method!="GET")await ctx.RequestServices.GetRequiredService<IAntiforgery>().ValidateRequestAsync(ctx);return await next(context);});
 api.AddEndpointFilter(Access.Filter);
 api.MapUsers();
+api.MapDashboard();
 api.MapSmtp();
 api.MapPlcHistory();
 api.MapDeletion();
 api.MapPost("/logout",async(HttpContext ctx)=>{await ctx.SignOutAsync();return Results.Ok();});
-api.MapGet("/state",async (ServerState s,HttpContext ctx)=>{ await s.Gate.WaitAsync(); try { var who=Access.Current(ctx);var visible=s.Engine.Config.Sensors.Where(x=>who.Sees(x.Id)).ToArray(); return Results.Ok(new{
+api.MapGet("/state",async (ServerState s,HttpContext ctx)=>{ await s.Gate.WaitAsync(); try { var who=Access.Current(ctx);var visible=DashboardLayout.Ordered(s.Engine.Config).Where(x=>who.Sees(x.Id)).ToArray(); return Results.Ok(new{
     revision=s.Revision,simulation=s.Engine.Config.Settings.Simulation,site=s.Engine.Config.Settings.Site,keepComputerAwake=s.Engine.Config.Settings.KeepComputerAwake,awakeStatus=s.PowerAvailability.Status,
     license=Security.LicenseStatus(s.Engine.Config),installationId=Security.InstallationId,
     controllers=s.Engine.Config.Controllers.Where(x=>who.AllSensors||who.Can(Access.Controllers)||visible.Any(v=>v.ControllerId==x.Id)).ToArray(),
