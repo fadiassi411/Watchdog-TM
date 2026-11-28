@@ -59,6 +59,40 @@ public sealed class AlarmNotifications
         CREATE TABLE IF NOT EXISTS mail_alarm_state(sensor TEXT PRIMARY KEY, level TEXT NOT NULL, episode TEXT NOT NULL, observed TEXT NOT NULL, reminder TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS mail_outbox(id INTEGER PRIMARY KEY, sensor TEXT NOT NULL, episode TEXT NOT NULL, kind TEXT NOT NULL, recipients TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, message_id TEXT NOT NULL UNIQUE, status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next TEXT NOT NULL, error TEXT NOT NULL DEFAULT '',created TEXT NOT NULL);
         """));}
+    // V4.4.1: plain-language reasons why automatic alarm email would not be sent. Mirrors Eligible plus the
+    // limits and recipients, so the Email page can show exactly what blocks an alarm email.
+    public static string[] GlobalIssues(Configuration c)
+    {
+        var issues=new List<string>();
+        if(c.Settings.Simulation)issues.Add("Demonstration mode: automatic alarm email is suppressed until live monitoring is started (Monitoring and license).");
+        if(!c.Settings.MailEnabled)issues.Add("'Enable temperature alarm email' is off in the SMTP configuration.");
+        if(!c.Settings.AutomaticAlerts)issues.Add("'Automatically email temperature alarms' is off in the SMTP configuration. The test email still works, but alarms are not emailed.");
+        try{SmtpDelivery.Validate(c.Settings);}catch(ArgumentException ex){issues.Add("SMTP settings are incomplete: "+ex.Message);}
+        return issues.ToArray();
+    }
+    public static string[] SensorIssues(Configuration c,Sensor s)
+    {
+        var issues=new List<string>();
+        if(s.Retired)issues.Add("Sensor is retired.");
+        else if(!s.Enabled)issues.Add("Sensor is disabled.");
+        else if(!c.Settings.Simulation&&!c.Settings.CommissionedSensors.Contains(s.Id))issues.Add("Sensor is not in live monitoring (check its controller and temperature register).");
+        var controller=c.Controllers.FirstOrDefault(x=>x.Id==s.ControllerId);
+        if(controller is null||!controller.Enabled)issues.Add("Its controller is disabled.");
+        else if(controller.Protocol==Protocol.Simulation)issues.Add("Its controller is a simulation controller.");
+        if(!s.EmailEnabled)issues.Add("'Enable email for this sensor' is off.");
+        if(string.IsNullOrWhiteSpace(s.Recipients))issues.Add("No recipients.");
+        if(!s.EmailHigh&&!s.EmailLow)issues.Add("Neither High nor Low temperature is selected.");
+        if(s.EmailHigh&&s.SoftwareHighLimit is null)issues.Add("High temperature email is selected but no High Alarm limit is set (dashboard → High Alarm).");
+        if(s.EmailLow&&s.SoftwareLowLimit is null)issues.Add("Low temperature email is selected but no Low Alarm limit is set (dashboard → Low Alarm).");
+        return issues.ToArray();
+    }
+    public static string Coverage(Sensor s)
+    {
+        var parts=new List<string>();
+        if(s.EmailHigh&&s.SoftwareHighLimit is double h)parts.Add($"above {h} °C");
+        if(s.EmailLow&&s.SoftwareLowLimit is double l)parts.Add($"below {l} °C");
+        return parts.Count==0?"":$"Emails {s.Recipients} when the temperature is {string.Join(" or ",parts)}"+(s.AlarmDelaySeconds>0?$" for {s.AlarmDelaySeconds} s":"")+".";
+    }
     public static bool Eligible(Configuration c,Sensor s)=>!c.Settings.Simulation&&c.Settings.MailEnabled&&c.Settings.AutomaticAlerts&&s.EmailEnabled&&s.Enabled&&!s.Retired&&c.Settings.CommissionedSensors.Contains(s.Id)&&c.Controllers.Any(x=>x.Id==s.ControllerId&&x.Enabled&&x.Protocol!=Protocol.Simulation);
     public void Reset(Guid? id=null){store.Write(db=>{if(id is {} sensor){Store.Run(db,"DELETE FROM mail_alarm_state WHERE sensor=$0",sensor.ToString());Store.Run(db,"UPDATE mail_outbox SET status='Cancelled',error='Notification configuration changed' WHERE sensor=$0 AND status='Pending'",sensor.ToString());}else{Store.Run(db,"DELETE FROM mail_alarm_state");Store.Run(db,"UPDATE mail_outbox SET status='Cancelled',error='Notification configuration changed' WHERE status='Pending'");}});}
     public void Observe(Configuration c,Sensor s,Reading r)

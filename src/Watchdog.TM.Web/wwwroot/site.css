@@ -9,3 +9,19 @@ button.danger{background:#a52a32;color:white}button.danger:hover{background:#812
 .history-color-0{color:#087e8b}.history-color-1{color:#bb3232}.history-color-2{color:#7755bb}.history-color-3{color:#c78100}.history-color-4{color:#287c38}
 
 .temperature-card.alarm-acknowledged{animation:none}.temperature-card.alarm-high.alarm-acknowledged{background:#fff0f0}.temperature-card.alarm-low.alarm-acknowledged{background:#fffbe3}
+.mail-readiness{margin:.6rem 0;padding:.5rem .7rem;border-radius:8px;font-size:.92rem}
+.readiness-ok{background:#eaf6ec;color:#1f5f2c}
+.readiness-blocked{background:#fdecec;color:#8a1c24}
+.error-text{color:#8a1c24}
+.signed-in{font-size:.85rem;color:#d7e4ea;margin:0 8px}
+.permission-group{border:1px solid #dce6eb;border-radius:8px;padding:10px 14px;margin:10px 0}.permission-group legend{font-weight:600;padding:0 6px}
+.permission-option{display:flex;gap:10px;align-items:flex-start;padding:6px 0}.permission-option input{margin-top:3px;flex-shrink:0;width:auto}.permission-option small{display:block;color:#5b6b74}
+.sensor-choices{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px 16px}.sensor-choices label{display:flex;gap:8px;align-items:center}.sensor-choices input{width:auto}
+.permission-tags{display:flex;flex-wrap:wrap;gap:4px}.permission-tags span{background:#eef4f7;border-radius:10px;padding:2px 8px;font-size:.8rem}
+#userDialog{max-width:640px;width:calc(100% - 32px)}
+.arrange-panel{border:2px dashed #087e8b}
+.grid.arranging .temperature-card{cursor:grab;outline:2px dashed #9cc7cd;outline-offset:-2px}
+.grid.arranging .temperature-card>:not(.arrange-bar){pointer-events:none;user-select:none}
+.grid.arranging .temperature-card.dragging{opacity:.45;cursor:grabbing}
+.arrange-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:-6px 0 10px;padding:6px 8px;background:#eef6f7;border-radius:6px;font-size:.85rem;color:#2c5d63}
+.arrange-bar button{padding:4px 12px;min-width:44px;min-height:36px}
